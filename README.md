@@ -33,7 +33,7 @@ No build, no packages. ES modules need `http://`, so opening `index.html` from d
 
 ```
 python3 -m http.server 8000      # then open http://localhost:8000/
-node --test tests/               # unit tests (no packages)
+node --test tests/*.mjs               # unit tests (no packages)
 ```
 
 ## Files
@@ -101,7 +101,7 @@ The seeded example request is the first one (`MKT-26-0106`, Fall Fest 5K) while 
 
 **Not checked by the builder — the tester must do these first:**
 - The site has **not been opened in a browser** (the build task allowed no server, and ES modules do not load from `file://`).
-- The unit tests in `tests/` are **written but were not run** (running scripts was not permitted in the build session). Baseline is zero tests; all should pass. Run `node --test tests/`.
+- The unit tests in `tests/` are **written but were not run** (running scripts was not permitted in the build session). Baseline is zero tests; all should pass. Run `node --test tests/*.mjs`.
 
 **Plan items skipped or changed**
 - Pointer-following light and card tilt: skipped (first on the plan's cut list). Hover lift on cards is in.
@@ -151,3 +151,43 @@ Counts: 8 PASS, 0 FAIL, 2 N/A, 1 not verified (waiting on the tester). Checklist
 15. Keyboard only through the whole flow; no sideways scroll at 320 px; usable at 200% text.
 16. Network tab: zero requests after load. Console: no errors, no CSP violations.
 17. In real Teams: add a Website tab with the read-only link and report the result either way.
+
+
+## Polish record (BACKLOG #2, 2026-11-17)
+
+Stronger blue/teal light forms, translucent navy header, 45–60% outer glass,
+80–82% reading surfaces, glossy navy actions, pill tabs and illuminated selections.
+The existing Pause motion and reduced-motion rules still control all animation.
+Unsupported backdrop-filter gets solid surfaces. Dark text stays on dense backing;
+rendered AA contrast, mobile layout and motion remain browser-verification items.
+Calendar chips, agenda and details, and staff event details show military ranges
+such as `0800–1100`. Stored HH:mm values, requester displays and exports stay unchanged.
+An embedded SVG favicon needs no extra file or request. Test commands are corrected.
+
+Validation: `node --test tests/*.mjs` passes all 3 test files, matching main
+`b04e01a` (3 pass, 0 fail), with added military-time edge-case coverage.
+`node --check` passes all 15 JavaScript files; `git diff --check` passes.
+CSP and changed views' id/data-test hooks match the baseline; favicon SVG parses.
+JS + CSS: 124,076 bytes versus 122,365 on main (+1,711 bytes, about 1.4%).
+The pre-existing 100 KB budget violation remains; tracked in BACKLOG's parking lot.
+No server or browser session, commit, push or deployment was performed.
+Branch creation was denied by the sandbox's read-only .git; the working tree is on
+main at b04e01a with uncommitted edits. No independent tester verdict is claimed.
+
+### Security checklist for polish #2
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Demo staff/read-only controls untouched |
+| No new packages | PASS | No packages added |
+| Dependency audit | PASS | No manifests, lockfiles or third-party dependencies exist |
+| No secrets, tokens or real personal data | PASS | Diff adds presentation, formatting and fictional test times only |
+| No data leaves the browser | PASS | CSP byte-identical; no network APIs added; favicon embedded |
+| Typed text never rendered as HTML | PASS | Existing h() text-node handling untouched; no innerHTML |
+| CSV formula neutralizing | PASS | Export implementation unchanged; export tests pass |
+| File-format checks (CSV / XLS / ICS) | PASS | Export suite passes; SVG parses; JS syntax and whitespace checks pass; external-app import not exercised |
+| No seals or official marks | PASS | Favicon uses the existing generic compass motif |
+| noindex | PASS | Existing meta and robots.txt unchanged |
+| Sheet paste file not read or copied | PASS | No sheet file accessed |
+
+Counts: **11 PASS, 0 FAIL, 0 N/A** (source and automated checks; browser checks pending).

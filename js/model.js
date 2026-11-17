@@ -1,4 +1,4 @@
-// Pure functions only: no DOM, no storage. Tested with `node --test tests/`.
+// Pure functions only: no DOM, no storage. Tested with `node --test tests/*.mjs`.
 import { LEAD_DAYS, svc } from './config.js';
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -21,6 +21,9 @@ export const fmtDM = s => { const d = parseYmd(s); return `${d.getDate()} ${MONT
 export const fmtMonth = ym => { const [y, m] = ym.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
 export const fmtTime = t => { const [hh, mm] = t.split(':').map(Number); return `${hh % 12 || 12}:${pad(mm)} ${hh < 12 ? 'AM' : 'PM'}`; };
 export const timeText = e => e.allDay ? 'All day' : e.start ? fmtTime(e.start) + (e.end ? ' – ' + fmtTime(e.end) : '') : 'Time not set';
+// Display only: stored HH:mm values and spreadsheet/ICS exports stay unchanged.
+export const militaryTimeText = e => e.allDay ? 'All day' : e.start
+  ? e.start.replace(':', '') + (e.end ? '–' + e.end.replace(':', '') : '') : 'Time not set';
 export const dateText = e => e.endDate && e.endDate > e.date ? `${fmtDate(e.date)} to ${fmtDate(e.endDate)}` : fmtDate(e.date);
 export const fmtStamp = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}, ${fmtTime(pad(d.getHours()) + ':' + pad(d.getMinutes()))}`; };
 

@@ -1,7 +1,7 @@
 // Rolling 12-month calendar. Entries are derived from requests on every render.
 import { h, page, pill, facts, select, field, openSheet, copyText, toast } from '../ui.js';
 import { SERVICES, svc, CAL_STATUS, JOB_STATUS, AF_CONNECT, FACILITIES, facility } from '../config.js';
-import { calWindow, calendarEvents, ymd, fmtDate, fmtDay, fmtDM, fmtMonth, fmtTime, timeText, daysInMonth, parseYmd, MONTHS } from '../model.js';
+import { calWindow, calendarEvents, ymd, fmtDate, fmtDay, fmtDM, fmtMonth, militaryTimeText as timeText, daysInMonth, parseYmd, MONTHS } from '../model.js';
 import { holidayMap } from '../seed.js';
 import { exportRows, toCSV, toXLS, toICS, download } from '../export.js';
 import * as store from '../store.js';
@@ -53,9 +53,9 @@ export function calendarView(ctx) {
     }, kids);
     return b;
   };
-  const shortTime = ev => ev.req.event.allDay ? 'All day' : ev.req.event.start ? fmtTime(ev.req.event.start).replace(':00', '') : '';
+  const shortTime = ev => timeText(ev.req.event);
   const rowButton = (ev, prefix) => evButton(ev, 'evrow', prefix, [
-    h('span', { class: 'when' }, h('strong', null, fmtDay(ev.date)), h('span', { class: 'sub' }, ev.time)),
+    h('span', { class: 'when' }, h('strong', null, fmtDay(ev.date)), h('span', { class: 'sub' }, timeText(ev.req.event))),
     h('span', { class: 'what' }, h('strong', { class: 'title' }, ev.title), h('span', { class: 'sub' }, `${ev.where} · ${ev.section}`)),
     pill(ev.status, CAL_STATUS[ev.status])]);
 

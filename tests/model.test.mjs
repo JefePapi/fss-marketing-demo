@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { overallStatus, heskTicketCount, leadTime, calWindow, calendarEvents, makeId, addDays } from '../js/model.js';
+import { overallStatus, heskTicketCount, leadTime, calWindow, calendarEvents, makeId, addDays, militaryTimeText, timeText } from '../js/model.js';
 
 const jobs = (...s) => ({ jobs: s.map((x, i) => { const [service, status] = x.split(':'); return { id: 'j' + i, service, status, team: { print: 'design', social: 'design', flash: 'flash', sponsorship: 'sponsorship', web: 'web' }[service] }; }) });
 
@@ -51,4 +51,16 @@ test('calendarEvents: a 3-day trip gives 3 entries; cancelled stays', () => {
 
 test('makeId format', () => {
   assert.equal(makeId(142, new Date(2026, 10, 17)), 'MKT-26-0142');
+});
+
+
+test('military event display keeps stored times and requester/export format intact', () => {
+  const event = Object.freeze({ start: '08:00', end: '11:00', allDay: false });
+  assert.equal(militaryTimeText(event), '0800–1100');
+  assert.equal(militaryTimeText({ start: '00:00', end: '23:59' }), '0000–2359');
+  assert.equal(militaryTimeText({ start: '13:05' }), '1305');
+  assert.equal(militaryTimeText({ allDay: true, start: '08:00' }), 'All day');
+  assert.equal(militaryTimeText({}), 'Time not set');
+  assert.equal(timeText(event), '8:00 AM – 11:00 AM');
+  assert.equal(event.start, '08:00');
 });

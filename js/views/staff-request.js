@@ -1,7 +1,7 @@
 // Staff view of one request: shared facts once, one lane per service, calendar card, thread, history.
 import { h, page, field, input, textarea, select, pill, facts } from '../ui.js';
 import { TEAMS, SERVICES, svc, STAFF, staffName, JOB_STATUS, OVERALL, CAL_STATUS, EVENT_TYPES, AF_CONNECT, facility } from '../config.js';
-import { overallStatus, heskTicketCount, teamsOf, dateText, timeText, fmtDate, fmtStamp, detailLines, newJob, ymd } from '../model.js';
+import { overallStatus, heskTicketCount, teamsOf, dateText, militaryTimeText as timeText, fmtDate, fmtStamp, detailLines, newJob, ymd } from '../model.js';
 import * as store from '../store.js';
 import { notFound } from './home.js';
 import { eventFields, validateEvent, eventFromDraft, draftFromEvent, oldWayText } from './request.js';

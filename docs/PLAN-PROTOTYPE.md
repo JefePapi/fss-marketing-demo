@@ -320,7 +320,7 @@ Repo name and README stay neutral ("Marketing request demo — sample data, unof
 
 ## 15. Test checklist
 
-**Automated (`node --test tests/`)** — baseline is zero tests on a new repo; all must pass.
+**Automated (`node --test tests/*.mjs`)** — baseline is zero tests on a new repo; all must pass.
 - `overallStatus` for each of the six rules in section 6.
 - `heskTicketCount`: print+social → 1; print+flash+sponsorship → 3; calendar-only → 0.
 - Lead time: 59 days → late; 60 days → on time; past date rejected.

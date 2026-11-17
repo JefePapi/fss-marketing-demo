@@ -16,6 +16,6 @@ This is the one rules file for the repo. They apply the same to every tool.
 ## Process
 - One `BACKLOG.md` item at a time: numbered entry before work, close-out note after. Side ideas go to the parking lot.
 - `main` is production (GitHub Pages serves it). No merge or publish without the owner's OK in the task text.
-- Run before handing off: `node --test tests/` (all must pass) and `node --check` on every `.js` file.
+- Run before handing off: `node --test tests/*.mjs` (all must pass) and `node --check` on every `.js` file.
 - Every change ships with the written security checklist (see README.md, "Security checklist").
 - Size budget: JS + CSS under 100 KB unminified. Check with `wc -c js/*.js js/views/*.js css/app.css`.
