@@ -21,6 +21,8 @@ Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages
 
 ## Limits — please read
 
+- Native date pickers follow the browser’s locale and may show a different first weekday. The demo month grid runs Sunday to Saturday.
+
 - **Data is per browser.** It lives in that browser's `localStorage`. A request sent on one phone does not appear on another computer.
 - **The read-only link is not a live shared calendar.** It shows the sample events plus whatever *that* browser added. It is a display mode, not security.
 - **Clearing browser data, or Reset demo data, returns to the 36 samples.**
@@ -96,6 +98,7 @@ robots.txt  .nojekyll  AGENTS.md  BACKLOG.md
 | Calendar card | `#cal-status` (`notconfirmed` `good` `cancelled`), `#cal-reason`, `#cal-cancel-confirm`, `#cal-type`, `#cal-section`, `#cal-actual` |
 | Thread | `#thread-text`, `#thread-about`, `#btn-reply`, `#btn-note`, `[data-test="thread-reply"]`, `[data-test="thread-note"]` |
 | Calendar views | `#view-month`, `#view-list`; current one has `aria-current`; `#calendar-body[data-view]` |
+| Calendar week layout | `#month-head` / `[data-test="month-head"]`: Sun–Sat; `#month-grid > .cell[data-date]`; `.cell.out` has neighbouring day numbers, `aria-hidden="true"` and no links |
 | Calendar months | `#m-YYYY-MM`, `#month-prev`, `#month-next`, `#month-title`, list banners `#mon-YYYY-MM` |
 | Calendar events | `[data-test="cal-event"][data-request="MKT-…"]`, day cell link `#day-YYYY-MM-DD`, `#day-panel`, detail `#event-detail`, `#sheet-close`, `#open-request` |
 | Filters | `#filter-svc-print` … `#filter-svc-calonly`, `#filter-status-good|notconfirmed|cancelled`, `#filter-section`, `#filter-clear` |
@@ -300,3 +303,54 @@ is pending and is not represented as a passed check.
 10. Confirm no horizontal page overflow, large tap targets, keyboard focus, banner/footer, motion pause and no network activity after initial assets.
 
 Final size from `wc -c js/*.js js/views/*.js css/app.css`: **155,256 bytes** unminified (approved limit 200,000).
+
+
+## Performance and calendar polish (BACKLOG #4, 2026-11-17)
+
+The atmosphere is one fixed background with three soft radial gradients. Hidden
+legacy light elements keep the shell unchanged; drift animations and blob filters
+are removed. Glass and trays use translucent gradient fills, rims and highlights;
+header and panels have no backdrop blur. This removes the area-dependent repeated
+backdrop repaint identified in the owner's desktop measurements. Hover lifts only
+transition transform; shadow changes are immediate. No will-change is used.
+Pause motion still disables transitions and hover lifts, with its existing
+aria-pressed control; system reduced motion remains supported.
+
+content-visibility: auto was tried on month blocks, queue cards and thread items
+and removed again: measured scroll speed got worse (queue 16 fps vs 60 fps without
+it at 1920x1080), because these lists are short. All 12 agenda months stay in the DOM. No scroll/resize listeners
+were found. Month grids now use complete Sunday–Saturday weeks with dimmed,
+noninteractive neighbouring dates. Day labels already index Sunday first; agenda
+and exports group by month/date, with no other week grouping to change.
+
+Validation: pre-change local baseline 5 unit test files passing, 0 failing;
+after change 6 passing, 0 failing, including month-boundary, leap-year, year-rollover
+and DST-month helper checks. All 20 site JS files pass node --check. Existing
+parity titles are unchanged; discovery finds 160 browser cases (156 parity plus
+4 new regression cases across desktop/phone). Both npm run test:parity and
+npx --no-install playwright test were attempted. The sandbox blocks socket
+creation: PermissionError [Errno 1] Operation not permitted. Browser behavior,
+visual appearance and the 55+ fps target at 1920×1080 and 2560×1440 idle/scroll
+remain unverified and require a browser run where the local server can start.
+No independent tester verdict is claimed. No git, network, install, commit,
+merge or deployment was performed. JS + CSS: 155,829 bytes (limit 200,000).
+
+### Security checklist for performance/calendar #4
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Demo staff/read-only controls untouched |
+| No new packages | PASS | Existing test tooling only; no install or manifest changes |
+| Full dependency audit | PASS | Offline npm audit reports 0 vulnerabilities across 3 development dependencies; no fresh network advisories |
+| No secrets or real personal data | PASS | Only CSS, date logic, fictional test dates and docs added |
+| No data leaves the browser | PASS | No network APIs or form posts added; no network used |
+| Typed text never rendered as HTML | PASS | New calendar cells use h() text nodes; no innerHTML |
+| CSV formula neutralizing | PASS | Export code untouched; export unit checks pass |
+| File-format checks | PASS | CSV/XLS/ICS unit checks and all JS syntax checks pass; source files decode as UTF-8 with no trailing whitespace; external-app imports untested |
+| CSP unchanged | PASS | index.html untouched; existing connect-src/form-action restrictions retained |
+| No seals or official marks | PASS | Gradient-only visuals; no imagery added |
+| noindex | PASS | index.html and robots.txt untouched |
+| Demo labels and stable hooks | PASS | Banner/footer and existing hooks retained; month-head added |
+
+Counts: **12 PASS, 0 FAIL, 0 N/A** for source/offline checks. Browser and FPS
+verification remain pending, not represented as passing checks.

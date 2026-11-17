@@ -145,7 +145,7 @@ const SERVICE_EXTRAS = {
 };
 
 export function requestView(ctx) {
-  if (!d) { const remembered = store.pref('contact'); d = { ...blank(), ...(remembered || {}), remember: !!remembered, ...(store.getDraft() || {}) }; if(typeof d.qty !== 'object') d.qty = {}; }
+  if (!d) { sending = false; const remembered = store.pref('contact'); d = { ...blank(), ...(remembered || {}), remember: !!remembered, ...(store.getDraft() || {}) }; if(typeof d.qty !== 'object') d.qty = {}; }
   const today = ymd(ctx.now), save = () => store.setDraft(d);
   const goStep = n => { d.step = n; errs = {}; save(); ctx.refresh({ top: true }); };
   const next = () => {
@@ -273,7 +273,6 @@ export function requestView(ctx) {
       if (Object.keys(bad).length) { d.step = s; errs = bad; save(); return ctx.refresh({ top: true }); }
     }
     sending = true; e.target.disabled = true;
-    setTimeout(() => { sending = false; }, 1000);
     const jobs = d.calOnly ? [] : SERVICES.filter(s => d.services.includes(s.id)).map((s, i) => newJob(s.id, i + 1, jobDetails(s.id, d), s.id === 'print' ? d.inHand : ''));
     const at = ctx.now.toISOString();
     const req = store.add({

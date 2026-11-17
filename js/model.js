@@ -14,6 +14,15 @@ export const diffDays = (a, b) => {
   return Math.round((Date.UTC(A.getFullYear(), A.getMonth(), A.getDate()) - Date.UTC(B.getFullYear(), B.getMonth(), B.getDate())) / 864e5);
 };
 
+// Complete Sunday–Saturday weeks, including neighbouring-month dates.
+export function monthCells(ym) {
+  const first = ym + '-01';
+  const start = addDays(first, -parseYmd(first).getDay());
+  const last = `${ym}-${pad(daysInMonth(ym))}`;
+  const end = addDays(last, 6 - parseYmd(last).getDay());
+  return Array.from({ length: diffDays(end, start) + 1 }, (_, i) => addDays(start, i));
+}
+
 // Display formats.
 export const fmtDate = s => { const d = parseYmd(s); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
 export const fmtDay = s => { const d = parseYmd(s); return `${DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`; };

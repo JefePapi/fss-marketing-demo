@@ -48,6 +48,29 @@ Opened 2026-11-17 before implementation. Authorized scope: docs/PARITY.md covere
 
 Validation: baseline main 0b90329 = 3 unit test files passing / 0 failing; final = 5 passing / 0 failing, including all original files. Site JS syntax checks, test discovery and diff whitespace checks pass. Offline dependency audit: 0 reported vulnerabilities, no install or network. README security checklist: 12 PASS, 0 FAIL, 0 N/A for source/offline checks. Browser execution attempted, but the sandbox blocked the local server socket (PermissionError); UI/visual verification and independent tester verdict remain pending. JS + CSS: 155,256 bytes, below the approved 200,000-byte limit. No commit created; no push, merge or deploy. Changes remain local on main 0b90329 per the explicit no-commits task instruction.
 
+## 4. Desktop speed fix and Sunday-first calendar — IMPLEMENTED, browser/FPS validation pending
+
+Opened 2026-11-17 before implementation. Authorized scope: static atmosphere,
+gradient glass surfaces, off-screen containment, Sunday–Saturday month cells,
+regression tests and documentation. Premise: source confirms animated blurred
+blobs, large backdrop blurs and Monday-first grid without trailing dates.
+Local baseline: 5 unit test files pass, 0 fail. Git/history and production reads
+excluded by the owner's explicit no-git/no-network instruction. No packages,
+commits, merge or deployment authorized.
+
+**Close-out (2026-11-17):** static multi-gradient atmosphere; gradient glass/tray
+surfaces without backdrop blur; transform/opacity-only transitions; off-screen
+content containment with print override. Complete Sunday–Saturday month grids,
+pure monthCells helper, unit coverage and two new browser regression tests.
+README includes hooks, native-picker limit, performance record and security checklist.
+Baseline 5 unit files pass/0 fail; final 6 pass/0 fail. All 20 site JS syntax
+checks pass; browser discovery 160 cases, existing parity inventory unchanged.
+Both browser commands attempted: sandbox socket PermissionError prevents server
+startup. Visual review, independent tester and 55+ fps idle/scroll measurements
+remain pending. Offline audit: 0 reported vulnerabilities. Security: 12 PASS,
+0 FAIL, 0 N/A (source/offline scope). JS + CSS 155,829 bytes, below 200,000.
+No git/network use, commit, push, merge or deployment.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

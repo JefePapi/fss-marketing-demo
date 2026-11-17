@@ -1,7 +1,7 @@
 // Rolling 12-month calendar. Entries are derived from requests on every render.
 import { h, page, pill, facts, select, field, openSheet, copyText, toast } from '../ui.js';
 import { SERVICES, svc, CAL_STATUS, JOB_STATUS, AF_CONNECT, FACILITIES, facility } from '../config.js';
-import { calWindow, calendarEvents, ymd, fmtDate, fmtDay, fmtDM, fmtMonth, militaryTimeText as timeText, daysInMonth, parseYmd, MONTHS } from '../model.js';
+import { calWindow, calendarEvents, ymd, fmtDate, fmtDay, fmtDM, fmtMonth, militaryTimeText as timeText, daysInMonth, monthCells, MONTHS } from '../model.js';
 import { holidayMap } from '../seed.js';
 import { exportRows, toCSV, toXLS, toICS, download } from '../export.js';
 import * as store from '../store.js';
@@ -59,13 +59,17 @@ export function calendarView(ctx) {
     h('span', { class: 'what' }, h('strong', { class: 'title' }, ev.title), h('span', { class: 'sub' }, `${ev.where} · ${ev.section}`)),
     pill(ev.status, CAL_STATUS[ev.status])]);
 
-  // Month grid, Monday first.
+  // Month grid: complete Sunday–Saturday weeks.
   const grid = () => {
-    const lead = (parseYmd(m + '-01').getDay() + 6) % 7, cells = [];
-    for (let i = 0; i < lead; i++) cells.push(h('div', { class: 'cell blank', 'aria-hidden': 'true' }));
-    for (let d = 1; d <= daysInMonth(m); d++) {
-      const date = `${m}-${String(d).padStart(2, '0')}`, evs = byDate[date] || [];
-      cells.push(h('div', { class: 'cell' + (date === today ? ' today' : '') + (hol[date] ? ' hol' : '') + (date === sel ? ' sel' : '') },
+    const cells = [];
+    for (const date of monthCells(m)) {
+      const d = Number(date.slice(8));
+      if (!date.startsWith(m + '-')) {
+        cells.push(h('div', { class: 'cell out', 'data-date': date, 'aria-hidden': 'true' }, h('span', { class: 'dnum' }, String(d))));
+        continue;
+      }
+      const evs = byDate[date] || [];
+      cells.push(h('div', { 'data-date': date, class: 'cell' + (date === today ? ' today' : '') + (hol[date] ? ' hol' : '') + (date === sel ? ' sel' : '') },
         h('a', {
           class: 'daybtn', id: 'day-' + date, href: link({ view: 'month', m, d: date }), 'data-test': 'cal-day', 'data-date': date,
           'aria-label': `${fmtDM(date)}${hol[date] ? ', ' + hol[date] : ''}, ${evs.length} event${evs.length === 1 ? '' : 's'}`, 'aria-current': date === sel ? 'date' : null,
@@ -76,7 +80,7 @@ export function calendarView(ctx) {
     }
     const dayEvents = sel && sel.startsWith(m) ? byDate[sel] || [] : null;
     return [
-      h('div', { class: 'grid7 head', 'aria-hidden': 'true' }, ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => h('span', null, d))),
+      h('div', { class: 'grid7 head', id: 'month-head', 'data-test': 'month-head', 'aria-hidden': 'true' }, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => h('span', null, d))),
       h('div', { class: 'grid7', id: 'month-grid', 'data-test': 'month-grid' }, cells),
       dayEvents ? h('div', { class: 'stack', id: 'day-panel', 'data-test': 'day-panel' },
         h('h3', null, fmtDate(sel), hol[sel] && h('span', { class: 'holtag' }, hol[sel])),
