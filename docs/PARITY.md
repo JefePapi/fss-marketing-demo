@@ -169,7 +169,7 @@ npm run test:live    # parity suite against https://jefepapi.github.io/fss-marke
 |---|---|---|
 | Unit tests | `node --test tests/*.test.mjs` | 32 passed / 32 (5 files) |
 | Parity suite, local | http://127.0.0.1:4173/ (this folder) | **156 passed / 156** (78 tests × 2 widths), 0 flaky |
-| Parity suite, live | https://jefepapi.github.io/fss-marketing-demo/ | run after this push (see the next commit) |
+| Parity suite, live | https://jefepapi.github.io/fss-marketing-demo/ | **156 passed / 156**, 0 flaky, no retries (site built from 791f5c7). An earlier live run had one timeout on R45 at 390 px. It passed on retry, so the live per-test timeout went from 30 s to 60 s. |
 
 ## Honest gaps (MISSING, by theme)
 

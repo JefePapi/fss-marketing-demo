@@ -7,7 +7,7 @@ const base = live || 'http://127.0.0.1:4173/';
 export default defineConfig({
   testDir: './tests',
   testMatch: /.*\.spec\.mjs$/,
-  timeout: 30_000,
+  timeout: live ? 60_000 : 30_000, // the live site is slower over the network
   retries: live ? 1 : 0,
   workers: live ? 4 : undefined,
   reporter: [['list'], ['json', { outputFile: 'test-results/parity.json' }]],
