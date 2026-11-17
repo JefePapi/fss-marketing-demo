@@ -23,7 +23,7 @@ export const SERVICES = [
 ];
 export const svc = id => SERVICES.find(s => s.id === id);
 
-export const SIZES = ['A6', 'A5', 'A4', 'A3', 'A1 poster'];
+export const SIZES = ['A6', 'A5', 'A4', 'A3', 'A1'];
 export const SOCIAL_KINDS = ['Event photo', 'Cover photo'];
 
 // Section codes are illustrative only.
@@ -45,10 +45,10 @@ export const STAFF = [
 ];
 export const staffName = id => (STAFF.find(s => s.id === id) || { name: 'Unassigned' }).name;
 
-export const JOB_STATUS = { new: 'New', inprogress: 'In progress', waiting: 'Waiting on requester', done: 'Done', declined: 'Declined' };
+export const JOB_STATUS = { new: 'New', inprogress: 'In progress', waiting: 'Waiting on requester', onhold: 'On hold', done: 'Done', declined: 'Declined' };
 export const JOB_STATUS_REQ = { ...JOB_STATUS, new: 'Received', waiting: 'We need something from you' };
-export const OVERALL = { calonly: 'Calendar only', declined: 'Declined', complete: 'Complete', waiting: 'Waiting on requester', inprogress: 'In progress', new: 'New' };
-export const OVERALL_REQ = { ...OVERALL, calonly: 'On the calendar', new: 'Received', waiting: 'We need something from you' };
+export const OVERALL = { withdrawn: 'Closed by requester', onhold: 'On hold', calonly: 'Calendar only', declined: 'Declined', complete: 'Complete', waiting: 'Waiting on requester', inprogress: 'In progress', new: 'New' };
+export const OVERALL_REQ = { ...OVERALL, withdrawn: 'You closed this request', calonly: 'On the calendar', new: 'Received', waiting: 'We need something from you' };
 export const CAL_STATUS = { notconfirmed: 'Not confirmed', good: 'Good to go', cancelled: 'Cancelled' };
 export const EVENT_TYPES = ['', 'Wing', 'AFE', 'M3'];
 export const AF_CONNECT = { yes: 'Yes', notyet: 'Not yet', no: 'No' };

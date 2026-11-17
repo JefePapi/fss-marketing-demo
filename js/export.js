@@ -1,6 +1,6 @@
 // Export builders. Row building and the CSV/XLS/ICS strings are pure; only download() touches the page.
-import { HEADERS, EXTRA_HEADERS, SHEET_TITLE, CAL_STATUS, AF_CONNECT } from './config.js';
-import { calendarEvents, parseYmd, ymd, addDays, daysInMonth, MONTHS, DAYS } from './model.js';
+import { HEADERS, EXTRA_HEADERS, SHEET_TITLE, CAL_STATUS, AF_CONNECT, TEAMS, OVERALL, staffName, facility } from './config.js';
+import { calendarEvents, parseYmd, ymd, addDays, daysInMonth, MONTHS, DAYS, overallStatus } from './model.js';
 
 const COLS = HEADERS.length + EXTRA_HEADERS.length;
 const pad = n => String(n).padStart(2, '0');
@@ -76,6 +76,7 @@ export function toICS(requests, win, now = new Date()) {
   const day = s => s.replace(/-/g, ''), stamp = now.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Marketing request demo//Sample data//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Rolling Calendar (demo sample data)'];
   for (const r of requests) {
+    if (r.kind === 'other' || r.mergedInto) continue;
     const e = r.event, last = e.endDate && e.endDate > e.date ? e.endDate : e.date;
     if (last < win.start || e.date > win.end) continue;
     lines.push('BEGIN:VEVENT', `UID:${r.id}@marketing-demo.example`, `DTSTAMP:${stamp}`);
@@ -96,7 +97,12 @@ export function toICS(requests, win, now = new Date()) {
 export function download(name, mime, text) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   const a = document.createElement('a');
-  a.setAttribute('href', url); a.setAttribute('download', name);
+  a.setAttribute('href', url); a.setAttribute('download', name.replace(/[\\/\x00-\x1f]/g, '_'));
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function requestRows(requests) {
+  const headers=['Request #','Title','Kind','Facility','Event date','Requester','Email','Cc','Priority','Overall status',...Object.values(TEAMS).flatMap(t=>[t+' status',t+' owner',t+' due'])];
+  return [{cells:headers},...requests.map(r=>({cells:[r.id,r.event.title,r.kind || 'event',r.kind==='other'?'':facility(r.event.facilityId).name,r.event.date,r.requester.name,r.requester.email,(r.cc || []).join(', '),r.priority || 'medium',OVERALL[overallStatus(r)],...Object.keys(TEAMS).flatMap(t=>{const jobs=r.jobs.filter(j=>j.team===t);return [jobs.map(j=>j.status).join('; '),jobs.map(j=>staffName(j.owner)).join('; '),jobs.map(j=>j.due || '').join('; ')];})]}))];
 }

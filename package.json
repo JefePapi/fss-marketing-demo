@@ -1,0 +1,14 @@
+{
+  "name": "fss-marketing-demo",
+  "private": true,
+  "description": "Unofficial demo. Test tooling only; the site itself has no packages and no build step.",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:parity",
+    "test:unit": "node --test tests/*.test.mjs",
+    "test:parity": "playwright test",
+    "test:live": "BASE_URL=https://jefepapi.github.io/fss-marketing-demo/ playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}

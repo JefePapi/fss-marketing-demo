@@ -9,6 +9,8 @@ export function homeView() {
       h('span', { class: 'bigcard-title' }, 'Marketing for an event or program'),
       h('span', { class: 'bigcard-sub' }, 'Flyers, social media, the Flash magazine, sponsors, the website and the calendar. Typed once.'),
       h('span', { class: 'btn primary', 'aria-hidden': 'true' }, 'Start a request')),
+    h('a',{class:'card link-card',id:'start-other',href:'#/other'},h('strong',null,"Something that isn't an event"),h('span',{class:'sub'},'A website change or a Flash magazine notice.')),
+    h('section',{class:'surface',id:'before-you-send'},h('h2',null,'Before you send'),h('p',{class:'sub'},'Sample wording'),h('p',null,'Send events 60 days ahead.'),h('p',null,'One round of changes to a proof.'),h('p',null,'The point of contact approves the final design.')),
     h('div', { class: 'two' },
       h('a', { class: 'card link-card', href: '#/status', id: 'go-status' }, h('strong', null, 'Check on a request'), h('span', { class: 'sub' }, 'Use your request number.')),
       h('a', { class: 'card link-card', href: '#/calendar', id: 'go-calendar' }, h('strong', null, 'See the calendar'), h('span', { class: 'sub' }, 'The rolling 12 months.'))));

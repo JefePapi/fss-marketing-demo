@@ -57,7 +57,7 @@ const ROWS = [
 ];
 
 const DETAILS = {
-  print: d => ({ sizes: ['A4', 'A3'], qty: 50, inHand: addDays(d, -21) }),
+  print: d => ({ sizes: ['A4', 'A3'], qty: { A4: 50, A3: 50 }, inHand: addDays(d, -21) }),
   social: () => ({ kinds: ['Event photo'] }),
   sponsorship: () => ({ breakEven: 80, cash: '500', items: 'Door prizes (sample)' }),
   web: () => ({ page: 'Events page' }),
@@ -115,7 +115,8 @@ export function buildSeeds(now = new Date()) {
         status: o.cancel ? 'cancelled' : past || o.good || i % 3 ? 'good' : 'notconfirmed',
         cancelReason: o.cancel || '', type: o.type || '', notes: '',
       },
-      jobs, thread,
+      priority: i === 0 ? 'critical' : i === 1 ? 'high' : 'medium', cc: [], files: [], outbox: [],
+      jobs: jobs.map((j,k) => { if (i < 2 && k < 2) j.due = addDays(today, i === 0 ? -2-k : 2+k); return j; }), thread,
       log: [{ at: stamp(sub, i), who: 'System', text: 'Request received' }],
     };
   });

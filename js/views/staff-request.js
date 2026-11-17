@@ -6,12 +6,16 @@ import * as store from '../store.js';
 import { notFound } from './home.js';
 import { eventFields, validateEvent, eventFromDraft, draftFromEvent, oldWayText } from './request.js';
 
+import { attachments, filePicker, filesPending } from '../files.js';
+import { resolve, merge, ccList, ccError, emailOK, requesterEmail, teamEmail, ownerEmail, autoOwner, openLane, flashSections, defaultFlash } from '../actions.js';
+import { confirmSheet, copyText } from '../ui.js';
 let ui = {};
 
 export function staffRequest(ctx) {
-  const req = store.find(ctx.parts[1]);
+  const req = resolve(store.requests(),ctx.parts[1]);
   if (!req) return notFound(ctx.parts[1], '#/staff/' + store.exampleId());
-  if (ui.id !== req.id) ui = { id: req.id, editing: false, draft: null, errs: {}, chip: false, cancel: null, msg: '', about: '', add: '' };
+  if(req.newReply) {req.newReply=false;store.save();}
+  if (ui.id !== req.id) ui = { id: req.id, editing: false, draft: null, errs: {}, chip: false, cancel: null, msg: '', files:[], noemail:false, contact:null, about: '', add: '' };
   const who = staffName(ctx.actingAs), today = ymd(ctx.now), e = req.event, cal = req.calendar;
   const log = text => req.log.push({ at: new Date().toISOString(), who, text });
   const commit = () => { store.save(); ctx.refresh(); };
@@ -21,9 +25,12 @@ export function staffRequest(ctx) {
   const FIELD_NAMES = { facilityId: 'Facility', title: 'Title', description: 'Description', date: 'Date', endDate: 'End date', start: 'Start time', end: 'End time', allDay: 'All day', where: 'Location', cost: 'Cost', estAttendance: 'Expected attendance', joint: 'Joint event', signup: 'Sign-up', afConnect: 'AF Connect' };
   const show = (k, v) => k === 'date' || k === 'endDate' ? (v ? fmtDate(v) : 'none') : k === 'facilityId' ? facility(v).name : v === true ? 'Yes' : v === false ? 'No' : v === '' || v == null ? 'blank' : String(v);
   const saveFacts = () => {
-    ui.errs = validateEvent(ui.draft, today, true);
+    ui.errs = req.kind === 'other' ? {} : validateEvent(ui.draft, today, true);
+    if(!ui.contact.name.trim() || !emailOK(ui.contact.email) || ccError(ui.contact.cc)) ui.errs.contact='Check the contact name and emails.';
     if (Object.keys(ui.errs).length) return ctx.refresh();
-    const next = eventFromDraft(ui.draft);
+    for(const k of ['name','email','phone']) if((req.requester[k] || '') !== ui.contact[k]) {log('Requester '+k+' changed from '+(req.requester[k] || 'blank')+' to '+ui.contact[k]);req.requester[k]=ui.contact[k];}
+    if((req.cc || []).join(', ') !== ui.contact.cc) {log('Requester Cc changed');req.cc=ccList(ui.contact.cc);}
+    const next = req.kind === 'other' ? {...e,title:ui.draft.title,description:ui.draft.description} : eventFromDraft(ui.draft);
     next.actualAttendance = e.actualAttendance;
     if (next.facilityId === e.facilityId) next.section = e.section; // keep a hand-edited section code
     for (const k of Object.keys(FIELD_NAMES)) if (next[k] !== e[k]) log(`${FIELD_NAMES[k]} changed from ${show(k, e[k])} to ${show(k, next[k])}`);
@@ -33,18 +40,21 @@ export function staffRequest(ctx) {
   const factsCard = ui.editing
     ? h('form', { class: 'surface stack', id: 'facts-form', novalidate: true, onsubmit: ev => ev.preventDefault() },
       h('h2', null, 'Edit facts'),
-      eventFields(ui.draft, { errs: ui.errs, today, lead: false, changed: () => {}, refresh: () => ctx.refresh() }),
+      ui.errs.contact && h('p',{class:'err'},ui.errs.contact),
+      ['name','email','phone','cc'].map(k=>field('f-req-'+k,'Requester '+(k==='cc'?'Cc':k),input('f-req-'+k,'text',ui.contact[k],ev=>{ui.contact[k]=ev.target.value;}))),
+      req.kind === 'other' ? ['title','description'].map(k=>field('f-'+k,k,input('f-'+k,'text',ui.draft[k],ev=>{ui.draft[k]=ev.target.value;}))) : eventFields(ui.draft, { errs: ui.errs, today, lead: false, changed: () => {}, refresh: () => ctx.refresh() }),
       h('div', { class: 'row wrap' },
         h('button', { class: 'btn primary', type: 'button', id: 'facts-save', 'data-test': 'facts-save', onclick: saveFacts }, 'Save facts'),
         h('button', { class: 'btn', type: 'button', id: 'facts-cancel', onclick: () => { ui.editing = false; ui.draft = null; ctx.refresh(); } }, 'Cancel')))
     : h('section', { class: 'surface stack', id: 'facts' },
       h('div', { class: 'row between' }, h('h2', null, 'Facts'),
-        h('button', { class: 'btn', type: 'button', id: 'facts-edit', 'data-test': 'facts-edit', onclick: () => { ui.editing = true; ui.draft = draftFromEvent(e); ui.errs = {}; ctx.refresh(); } }, 'Edit facts')),
+        h('button', { class: 'btn', type: 'button', id: 'facts-edit', 'data-test': 'facts-edit', onclick: () => { ui.editing = true; ui.draft = draftFromEvent(e); ui.contact={...req.requester,phone:req.requester.phone || '',cc:(req.cc || []).join(', ')}; ui.errs = {}; ctx.refresh(); } }, 'Edit facts')),
       facts([
-        ['Facility', `${facility(e.facilityId).name} (${e.section})`], ['Day', dateText(e)], ['Time', timeText(e)], ['Where', e.where],
+        ['Facility', req.kind === 'other' ? '' : `${facility(e.facilityId).name} (${e.section})` ], ['Day', req.kind === 'other' ? 'No event' : dateText(e)], ['Time', req.kind === 'other' ? '' : timeText(e)], ['Where', e.where],
         ['What', e.description], ['Cost', e.cost], ['Expected', e.estAttendance], ['Joint event', e.joint ? 'Yes' : 'No'],
         ['Sign-up needed', e.signup ? 'Yes' : 'No'], ['On AF Connect', AF_CONNECT[e.afConnect]],
         ['Requester', `${req.requester.name} — ${req.requester.email}${req.requester.phone ? ' — ' + req.requester.phone : ''}`],
+        ['Cc',(req.cc || []).join(', ')], ['Sent in by staff',req.openedBy ? '('+req.openedBy+')' : ''],
         ['Sent in', fmtStamp(req.submittedAt)],
       ]));
 
@@ -55,18 +65,24 @@ export function staffRequest(ctx) {
       h('div', null, h('h3', null, s.short), h('p', { class: 'sub' }, TEAMS[j.team] + ' team'), pill(j.status, JOB_STATUS[j.status])),
       field('lane-status-' + j.id, 'Status', select('lane-status-' + j.id, Object.entries(JOB_STATUS), j.status, ev => {
         log(`${s.short}: status changed from ${JOB_STATUS[j.status]} to ${JOB_STATUS[ev.target.value]}`);
-        j.status = ev.target.value; commit();
+        const completeBefore = req.jobs.every(x=>!openLane(x)); j.status = ev.target.value;
+        if(!completeBefore && req.jobs.every(x=>!openLane(x))) requesterEmail(req,'complete'); commit();
       }, { 'data-test': 'lane-status', 'data-service': j.service })),
       j.status === 'declined' && field('lane-reason-' + j.id, 'Why declined? (short reason)', input('lane-reason-' + j.id, 'text', j.declineReason || '', null, {
         maxlength: 120, 'data-test': 'lane-reason', onchange: ev => { j.declineReason = ev.target.value.trim(); log(`${s.short}: decline reason set`); store.save(); },
       })),
       field('lane-owner-' + j.id, 'Owner', select('lane-owner-' + j.id, [['', 'Unassigned'], ...STAFF.filter(p => p.team === j.team).map(p => [p.id, p.name])], j.owner || '', ev => {
         log(`${s.short}: owner changed from ${staffName(j.owner)} to ${staffName(ev.target.value)}`);
-        j.owner = ev.target.value || null; commit();
+        j.owner = ev.target.value || null; ownerEmail(req,j); commit();
       }, { 'data-test': 'lane-owner', 'data-service': j.service })),
       field('lane-due-' + j.id, 'Due', input('lane-due-' + j.id, 'date', j.due || '', null, {
         'data-test': 'lane-due', onchange: ev => { j.due = ev.target.value; log(`${s.short}: due date set to ${j.due ? fmtDate(j.due) : 'none'}`); store.save(); },
       })),
+      j.due && j.due < today && openLane(j) && h('span',{'data-test':'overdue',class:'pill'},'Overdue'),
+      !j.owner && openLane(j) && h('button',{type:'button',class:'btn','data-test':'lane-autoassign',onclick:()=>{j.owner=autoOwner(store.requests(),j);log(s.short+': auto-assigned to '+staffName(j.owner));ownerEmail(req,j);commit();}},'Auto-assign'),
+      j.owner && h('button',{type:'button',class:'btn','data-test':'lane-remind',onclick:()=>{ownerEmail(req,j,'reminder');log('Owner reminded');commit();}},'Remind owner'),
+      j.service === 'flash' && field('lane-flashsection-'+j.id,'Flash section',select('lane-flashsection-'+j.id,flashSections.map(x=>[x,x]),j.details.flashSection || defaultFlash(e.facilityId),ev=>{j.details.flashSection=ev.target.value;log('Flash section changed to '+ev.target.value);commit();},{'data-test':'lane-flashsection'})),
+      h('div',{class:'stack'},field('move-'+j.id,'Move to',select('move-'+j.id,[['','Choose a service'],...SERVICES.filter(s=>!req.jobs.some(x=>x.service===s.id)).map(s=>[s.id,s.short])],'',null,{'data-test':'lane-move'})),h('button',{class:'btn',type:'button','data-test':'lane-move-go',onclick:()=>{const v=document.getElementById('move-'+j.id).value;if(!v)return;log('Moved from '+svc(j.service).short+' to '+svc(v).short);j.service=v;j.team=svc(v).team;j.owner=null;teamEmail(req,j);commit();}},'Move')) ,
       details.length ? facts(details) : h('p', { class: 'sub' }, s.note || 'No extra answers for this part.'));
   };
   const missing = SERVICES.filter(s => !req.jobs.some(j => j.service === s.id));
@@ -76,14 +92,15 @@ export function staffRequest(ctx) {
       class: 'btn', type: 'button', id: 'btn-add-part', 'data-test': 'add-part', onclick: () => {
         if (!ui.add) return;
         const num = Math.max(0, ...req.jobs.map(j => +j.id.slice(1))) + 1;
-        req.jobs.push(newJob(ui.add, num));
+        req.jobs.push(newJob(ui.add, num, ui.add === 'flash' ? {flashSection:defaultFlash(e.facilityId)} : {}));
+        teamEmail(req,req.jobs.at(-1));
         log(`Part added: ${svc(ui.add).short}`); ui.add = ''; commit();
       },
     }, 'Add'));
 
   // Calendar card. Cancelling needs a reason before it takes effect.
   const canceling = ui.cancel !== null;
-  const calCard = h('section', { class: 'surface stack', id: 'calendar-card' },
+  const calCard = req.kind !== 'other' && h('section', { class: 'surface stack', id: 'calendar-card' },
     h('h2', null, 'Calendar'),
     h('p', { class: 'sub' }, 'The calendar entry is made from this request. Nobody types it twice. ',
       h('a', { href: '#/calendar?view=month&m=' + e.date.slice(0, 7), id: 'open-calendar' }, 'See it on the calendar')),
@@ -118,8 +135,11 @@ export function staffRequest(ctx) {
 
   // Thread: replies go to the requester; private notes stay with staff.
   const post = kind => () => {
-    if (!ui.msg.trim()) return;
-    req.thread.push({ at: new Date().toISOString(), author: who, role: 'staff', kind, ...(ui.about ? { jobId: ui.about } : {}), text: ui.msg.trim() });
+    if(filesPending()) return;
+    if (!ui.msg.trim() && !ui.files.length) return;
+    req.thread.push({ at: new Date().toISOString(), author: who, role: 'staff', kind, ...(ui.about ? { jobId: ui.about } : {}), text: ui.msg.trim(),files:[...ui.files] });
+    if(kind==='reply' && !ui.noemail) requesterEmail(req,'staff-reply');
+    log(kind==='reply'?'Staff replied':'Private note added');ui.files=[];
     ui.msg = ''; commit();
   };
   const jobLabel = id => { const j = req.jobs.find(x => x.id === id); return j ? svc(j.service).short : ''; };
@@ -128,7 +148,10 @@ export function staffRequest(ctx) {
     req.thread.length ? h('ul', { class: 'thread' }, req.thread.map(t => h('li', { class: t.kind === 'note' ? 'private' : t.role === 'staff' ? 'from-staff' : 'from-you', 'data-test': 'thread-' + t.kind },
       h('p', { class: 'sub' }, t.kind === 'note' ? h('strong', null, 'Private note (staff only) · ') : t.role === 'staff' ? 'Reply to requester · ' : 'From requester · ',
         `${t.author} · ${fmtStamp(t.at)}`, t.jobId && jobLabel(t.jobId) && ` · About: ${jobLabel(t.jobId)}`),
-      h('p', null, t.text)))) : h('p', { class: 'sub' }, 'Nothing yet.'),
+      h('p', null, t.text),attachments(t.files)))) : h('p', { class: 'sub' }, 'Nothing yet.'),
+    field('canned','Insert a saved reply',select('canned',[['','Choose a saved reply'],...['Proof attached','Need final wording','Added to the Flash','Sponsor search started','All done'].map(x=>[x,x])],'',ev=>{ui.msg += (ui.msg?'\n':'')+ev.target.value;ctx.refresh();})),
+    filePicker('thread-files',ui.files),
+    h('label',{class:'choice'},h('input',{id:'reply-noemail',type:'checkbox',checked:ui.noemail,onchange:ev=>{ui.noemail=ev.target.checked;}}),"Don't email the requester"),
     field('thread-text', 'Write a reply or a note', textarea('thread-text', ui.msg, ev => { ui.msg = ev.target.value; }, { rows: 3, maxlength: 1000 })),
     req.jobs.length > 0 && field('thread-about', 'About', select('thread-about', [['', 'The whole request'], ...req.jobs.map(j => [j.id, svc(j.service).short])], ui.about, ev => { ui.about = ev.target.value; })),
     h('div', { class: 'row wrap' },
@@ -136,6 +159,7 @@ export function staffRequest(ctx) {
       h('button', { class: 'btn', type: 'button', id: 'btn-note', 'data-test': 'note-save', onclick: post('note') }, 'Save private note')));
 
   return page(
+    ctx.parts[1] !== req.id && h('p',{class:'surface',id:'merged-note'},`Request ${ctx.parts[1]} was merged into ${req.id}`),
     h('div', { class: 'surface' },
       h('p', { class: 'eyebrow' }, h('a', { href: '#/staff' }, 'Queue'), ' / ', h('span', { id: 'staff-request-id' }, req.id)),
       h('h1', { tabindex: '-1' }, e.title),
@@ -146,11 +170,26 @@ export function staffRequest(ctx) {
           `Old way: ${n} separate tickets`)),
       n > 1 && ui.chip && h('p', { class: 'note', id: 'old-way-detail' }, oldWayText(teamsOf(req))),
       h('p', { class: 'sub' }, h('a', { href: '#/status/' + req.id, id: 'see-as-requester' }, 'See what the requester sees'))),
-    factsCard,
+    h('section',{class:'surface stack'},
+      field('req-priority','Priority',select('req-priority',['low','medium','high','critical'].map(x=>[x,x[0].toUpperCase()+x.slice(1)]),req.priority || 'medium',ev=>{req.priority=ev.target.value;log('Priority changed to '+req.priority[0].toUpperCase()+req.priority.slice(1));commit();})),
+      h('button',{id:'print-request',class:'btn',type:'button',onclick:()=>window.print()},'Print request'),
+      input('requester-link','text',new URL('#/status/'+req.id,location.href).href,null,{readonly:true}),
+      h('button',{id:'copy-requester-link',class:'btn',type:'button',onclick:()=>copyText(document.getElementById('requester-link').value)},'Copy requester link')),
+    factsCard, attachments(req.files),
     h('section', { class: 'surface stack', id: 'lanes' },
       h('h2', null, req.jobs.length ? `Lanes (${req.jobs.length})` : 'Calendar only: no lanes'),
       h('div', { class: 'lanes' }, req.jobs.map(lane)), addPart),
     calCard, thread,
+    h('section',{class:'surface stack',id:'email-log'},h('h2',null,'Email log — Demo: nothing is sent'),
+      (req.outbox || []).map(x=>h('p',{'data-test':'email-entry','data-trigger':x.trigger},`${fmtStamp(x.at)} · To: ${x.to.join(', ')} · Cc: ${x.cc.join(', ')} · ${x.subject}`)),
+      h('button',{id:'resend-receipt',class:'btn',type:'button',onclick:()=>{requesterEmail(req,'resend');log('Receipt re-sent (demo)');commit();}},'Re-send receipt')),
+    h('section',{class:'surface stack'},h('h2',null,'Related requests'),
+      (req.related || []).map(id=>h('div',{class:'row wrap'},h('a',{'data-test':'related-link',href:'#/staff/'+id},id),h('button',{class:'btn',type:'button',onclick:()=>{req.related=req.related.filter(x=>x!==id);const other=store.find(id);if(other){other.related=(other.related || []).filter(x=>x!==req.id);other.log.push({at:new Date().toISOString(),who,text:'Related link removed: '+req.id});}log('Related link removed: '+id);commit();}},'Remove'))),
+      field('related-input','Request number',input('related-input','text','',null)),
+      h('button',{id:'related-add',class:'btn',type:'button',onclick:()=>{const other=store.find(document.getElementById('related-input').value.trim().toUpperCase());if(!other || other===req || other.mergedInto)return;req.related=[...new Set([...(req.related || []),other.id])];other.related=[...new Set([...(other.related || []),req.id])];log('Related to '+other.id);other.log.push({at:new Date().toISOString(),who,text:'Related to '+req.id});commit();}},'Link requests')),
+    h('section',{class:'surface stack'},field('merge-into','Merge into request number',input('merge-into','text','',null)),h('p',{id:'merge-error',class:'err'}),
+      h('button',{id:'merge-go',class:'btn',type:'button',onclick:ev=>{const target=store.find(document.getElementById('merge-into').value.trim().toUpperCase());if(!target || target===req || target.mergedInto){document.getElementById('merge-error').textContent='Choose another existing, unmerged request.';return;}confirmSheet('Merge '+req.id+' into '+target.id+'?','Merge requests',()=>{merge(req,target,store.requests());store.save();ctx.go('#/staff/'+req.id);},ev.target);}},'Merge')),
+    h('section',{class:'surface stack',id:'other-requests'},h('h2',null,'Other requests from the same person'),store.requests().filter(r=>r.id!==req.id && !r.mergedInto && r.requester.email.toLowerCase()===req.requester.email.toLowerCase()).map(r=>h('a',{'data-test':'other-request',href:'#/staff/'+r.id},r.id+' — '+r.event.title))),
     h('details', { class: 'surface', id: 'history' }, h('summary', null, `History (${req.log.length})`),
       h('ul', { class: 'plain log' }, [...req.log].reverse().map(l => h('li', null, h('span', { class: 'sub' }, `${fmtStamp(l.at)} · ${l.who} — `), l.text)))));
 }

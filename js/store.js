@@ -1,5 +1,6 @@
 // One JSON blob in localStorage. If storage is blocked (private mode, a Teams frame),
 // everything still works from memory for this page view.
+import { clearFiles } from './files.js';
 import { VERSION, STORE_KEY } from './config.js';
 import { buildSeeds, FIRST_SEED } from './seed.js';
 import { makeId } from './model.js';
@@ -25,7 +26,7 @@ export function init(now = new Date()) {
   else { state = fresh(now); save(); }
 }
 export const save = () => writeJson('localStorage', STORE_KEY, state);
-export function reset(now = new Date()) { state = fresh(now); save(); clearDraft(); }
+export function reset(now = new Date()) { state = fresh(now); save(); clearDraft(); clearFiles(); }
 export const memoryOnly = () => memOnly;
 export const requests = () => state.requests;
 export const find = id => state.requests.find(r => r.id === id);

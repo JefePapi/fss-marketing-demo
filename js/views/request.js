@@ -4,12 +4,18 @@ import { FACILITIES, facility, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CON
 import { leadTime, ymd, fmtDM, fmtDate, dateText, timeText, newJob, diffDays, isYmd } from '../model.js';
 import * as store from '../store.js';
 
+import { filePicker, filesPending } from '../files.js';
+import { ccList, ccError, received, defaultFlash } from '../actions.js';
+import { staffName } from '../config.js';
+
+export const botTrap = (value, change) => h('div', { class: 'bot-trap', 'aria-hidden':'true' }, h('label',{for:'f-website'},'Leave this empty'), input('f-website','text',value,change,{name:'website',tabindex:-1,autocomplete:'off','aria-hidden':'true'}));
+
 const STEPS = ['About you', 'About the event', 'What do you need from Marketing?', 'Check and send'];
 const blank = () => ({
-  step: 1, name: '', email: '', phone: '',
+  step: 1, name: '', email: '', phone: '', cc: '', remember: false, bystaff: false, website: '', files: [],
   facilityId: '', title: '', description: '', date: '', multi: false, endDate: '', allDay: false, start: '', end: '',
   where: '', cost: '', est: '', joint: '', signup: '', afConnect: '',
-  services: [], calOnly: false, sizes: [], qty: '', inHand: '', kinds: [], breakEven: '', cash: '', items: '', page: '',
+  services: [], calOnly: false, sizes: [], qty: {}, inHand: '', kinds: [], breakEven: '', cash: '', items: '', page: '',
 });
 let d = null, errs = {}, sending = false;
 
@@ -99,10 +105,11 @@ export const draftFromEvent = e => ({
 
 // Service answers from the draft, shaped for a lane.
 export function jobDetails(service, d) {
-  if (service === 'print') return { sizes: [...d.sizes], qty: d.qty === '' ? '' : Number(d.qty), inHand: d.inHand };
+  if (service === 'print') return { sizes: [...d.sizes], qty: Object.fromEntries(d.sizes.filter(s => d.qty[s] !== '').map(s => [s, Number(d.qty[s] || 0)])), inHand: d.inHand };
   if (service === 'social') return { kinds: [...d.kinds] };
   if (service === 'sponsorship') return { breakEven: d.breakEven, cash: d.cash.trim(), items: d.items.trim() };
   if (service === 'web') return { page: d.page.trim() };
+  if (service === 'flash') return { flashSection: defaultFlash(d.facilityId) };
   return {};
 }
 
@@ -111,6 +118,7 @@ function validate(step, today) {
     const e = {};
     if (!d.name.trim()) e.name = 'Tell us your name.';
     if (!/^\S+@\S+\.\S+$/.test(d.email.trim())) e.email = 'Add an email like name@example.com.';
+    if (ccError(d.cc)) e.cc = ccError(d.cc);
     return e;
   }
   if (step === 2) return validateEvent(d, today, false);
@@ -119,11 +127,13 @@ function validate(step, today) {
 }
 
 const SERVICE_EXTRAS = {
-  print: save => [
-    chips('sizes', 'Which sizes?', SIZES.map(s => [s, s]), d.sizes, save, { multi: true }),
-    field('f-qty', 'How many?', input('f-qty', 'number', d.qty, e => { d.qty = e.target.value; save(); }, { min: 1, max: 5000, inputmode: 'numeric' })),
-    field('f-inHand', 'When do you need it in hand?', input('f-inHand', 'date', d.inHand, e => { d.inHand = e.target.value; save(); })),
-  ],
+  print: save => {
+    const quantities = h('div', { class:'stack' });
+    const draw = () => quantities.replaceChildren(...d.sizes.map(s => field('f-qty-'+s.toLowerCase(), 'How many '+s+'?', input('f-qty-'+s.toLowerCase(),'number',d.qty[s] || '',e => {d.qty[s]=e.target.value;save();},{min:1,max:5000,inputmode:'numeric'}))));
+    draw();
+    return [chips('sizes','Which sizes?',SIZES.map(s => [s,s]),d.sizes,() => {save();draw();},{multi:true}),quantities,
+      field('f-inHand', 'When do you need it in hand?', input('f-inHand', 'date', d.inHand, e => { d.inHand = e.target.value; save(); }))];
+  },
   social: save => [chips('kinds', 'Which one?', SOCIAL_KINDS.map(s => [s, s]), d.kinds, save, { multi: true })],
   sponsorship: save => [
     field('f-breakEven', 'Break-even number', input('f-breakEven', 'number', d.breakEven, e => { d.breakEven = e.target.value; save(); }, { min: 0, inputmode: 'numeric' }), null, 'How many people you need to cover costs.'),
@@ -135,10 +145,11 @@ const SERVICE_EXTRAS = {
 };
 
 export function requestView(ctx) {
-  if (!d) d = { ...blank(), ...(store.getDraft() || {}) };
+  if (!d) { const remembered = store.pref('contact'); d = { ...blank(), ...(remembered || {}), remember: !!remembered, ...(store.getDraft() || {}) }; if(typeof d.qty !== 'object') d.qty = {}; }
   const today = ymd(ctx.now), save = () => store.setDraft(d);
   const goStep = n => { d.step = n; errs = {}; save(); ctx.refresh({ top: true }); };
   const next = () => {
+    if(filesPending()) return;
     errs = validate(d.step, today);
     const bad = Object.keys(errs)[0];
     if (!bad) return goStep(d.step + 1);
@@ -157,6 +168,12 @@ export function requestView(ctx) {
 
   let body;
   if (d.step === 1) {
+    const suggest = h('div');
+    const drawSuggest = () => {
+      const typos = {'gmial.com':'gmail.com','gmai.com':'gmail.com','gmail.co':'gmail.com','gamil.com':'gmail.com','hotmial.com':'hotmail.com','outlok.com':'outlook.com','yaho.com':'yahoo.com','yahooo.com':'yahoo.com','exmaple.com':'example.com','example.con':'example.com'};
+      const [name,domain] = d.email.split('@'), fixed = typos[(domain || '').toLowerCase()];
+      suggest.replaceChildren(...(fixed ? [h('button',{type:'button',class:'btn',id:'email-suggest',onclick:() => {d.email=name+'@'+fixed;save();ctx.refresh();}},'Did you mean '+name+'@'+fixed+'?')] : []));
+    }; drawSuggest();
     body = [
       h('button', {
         class: 'btn', type: 'button', id: 'fill-sample', 'data-test': 'fill-sample', onclick: () => {
@@ -170,7 +187,11 @@ export function requestView(ctx) {
         },
       }, 'Fill with sample answers'),
       field('f-name', 'Your name', input('f-name', 'text', d.name, set('name'), { autocomplete: 'off', maxlength: 60 }), errs.name),
-      field('f-email', 'Your email', input('f-email', 'email', d.email, set('email'), { autocomplete: 'off', maxlength: 80, placeholder: 'name@example.com' }), errs.email),
+      field('f-email', 'Your email', input('f-email', 'email', d.email, e => { d.email=e.target.value;save();drawSuggest(); }, { autocomplete: 'off', maxlength: 80, placeholder: 'name@example.com' }), errs.email),
+      suggest,
+      field('f-cc','Also send updates to (optional)',input('f-cc','text',d.cc,set('cc')),errs.cc,'Comma-separated, up to 5 emails.'),
+      h('label',{class:'choice'},h('input',{id:'f-remember',type:'checkbox',checked:d.remember,onchange:e => {d.remember=e.target.checked;save();}}),'Remember my details on this device'),
+      ctx.staff && h('label',{class:'choice'},h('input',{id:'f-bystaff',type:'checkbox',checked:d.bystaff,onchange:e => {d.bystaff=e.target.checked;save();}}),'Sent in by staff for a caller'),
       field('f-phone', 'Your phone (optional)', input('f-phone', 'tel', d.phone, set('phone'), { autocomplete: 'off', maxlength: 30, placeholder: 'Leave blank in the demo' })),
     ];
   } else if (d.step === 2) {
@@ -217,7 +238,7 @@ export function requestView(ctx) {
         }),
         calBox, errLine),
       oldWay,
-      h('p', { class: 'ghost' }, 'Add pictures or files — not in this demo'),
+      filePicker('f-files',d.files,save),
     ];
     draw();
   } else {
@@ -234,7 +255,7 @@ export function requestView(ctx) {
       card(3, 'What you asked for', d.calOnly
         ? h('p', null, 'Just put it on the calendar. No work for Marketing.')
         : h('ul', { class: 'plain' }, d.services.map(id => {
-          const lines = Object.entries({ Sizes: d.sizes.join(', '), 'How many': d.qty, 'In hand by': d.inHand && fmtDate(d.inHand) });
+          const lines = Object.entries({ Sizes: d.sizes.join(', '), 'How many': Object.entries(d.qty).map(([s,n]) => s+': '+n).join(', '), 'In hand by': d.inHand && fmtDate(d.inHand) });
           const extra = id === 'print' ? lines.filter(x => x[1]).map(x => x.join(': ')).join(' · ')
             : id === 'social' ? d.kinds.join(', ') : id === 'sponsorship' && d.breakEven ? 'Break-even: ' + d.breakEven : id === 'web' ? d.page : '';
           return h('li', null, h('strong', null, svc(id).short), ` — ${TEAMS[svc(id).team]} team`, extra && h('small', null, extra));
@@ -245,7 +266,8 @@ export function requestView(ctx) {
   }
 
   const send = e => {
-    if (sending) return;
+    if (sending || filesPending()) return;
+    if(d.website) { errs.refused=true; return ctx.refresh(); }
     for (const s of [1, 2, 3]) {
       const bad = validate(s, today);
       if (Object.keys(bad).length) { d.step = s; errs = bad; save(); return ctx.refresh({ top: true }); }
@@ -255,17 +277,20 @@ export function requestView(ctx) {
     const jobs = d.calOnly ? [] : SERVICES.filter(s => d.services.includes(s.id)).map((s, i) => newJob(s.id, i + 1, jobDetails(s.id, d), s.id === 'print' ? d.inHand : ''));
     const at = ctx.now.toISOString();
     const req = store.add({
+      kind: 'event', cc: ccList(d.cc), files: [...d.files], priority:'medium', openedBy: d.bystaff && ctx.staff ? staffName(ctx.actingAs) : null, outbox: [],
       submittedAt: at, late: leadTime(d.date, today).late,
       requester: { name: d.name.trim(), email: d.email.trim(), ...(d.phone.trim() ? { phone: d.phone.trim() } : {}) },
       event: eventFromDraft(d), calendar: { status: 'notconfirmed', cancelReason: '', type: '', notes: '' },
       jobs, thread: [], log: [{ at, who: 'System', text: 'Request received' }],
     }, ctx.now);
+    if(req.openedBy) req.log[0].text = 'Sent in by staff ('+req.openedBy+')';
+    received(req); store.pref('contact',d.remember ? {name:d.name,email:d.email,phone:d.phone,cc:d.cc} : null); store.save();
     d = null; errs = {}; store.clearDraft();
     ctx.go('#/sent/' + req.id);
   };
 
   return page(head,
-    h('form', { class: 'surface stack', id: 'step-' + d.step, 'data-test': 'step-' + d.step, novalidate: true, onsubmit: e => e.preventDefault() }, body),
+    h('form', { class: 'surface stack', id: 'step-' + d.step, 'data-test': 'step-' + d.step, novalidate: true, onsubmit: e => e.preventDefault() }, body, botTrap(d.website,e => {d.website=e.target.value;save();}), errs.refused && h('p',{id:'send-refused',class:'err'},'Something went wrong. Please try again.')),
     h('div', { class: 'tray' },
       d.step > 1 ? h('button', { class: 'btn', type: 'button', id: 'btn-back', 'data-test': 'back', onclick: () => goStep(d.step - 1) }, 'Back') : h('a', { class: 'btn', href: '#/' }, 'Cancel'),
       d.step < 4 ? h('button', { class: 'btn primary', type: 'button', id: 'btn-next', 'data-test': 'next', onclick: next }, 'Continue')

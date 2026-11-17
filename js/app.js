@@ -2,6 +2,8 @@
 import { h, select, closeSheet, confirmSheet, toast } from './ui.js';
 import { STAFF } from './config.js';
 import * as store from './store.js';
+import { otherView } from './views/other.js';
+import { reportsView } from './views/reports.js';
 import { homeView } from './views/home.js';
 import { requestView, dropDraft } from './views/request.js';
 import { sentView } from './views/sent.js';
@@ -12,8 +14,8 @@ import { calendarView } from './views/calendar.js';
 import { aboutView } from './views/about.js';
 
 const VIEWS = {
-  '': homeView, request: requestView, sent: sentView, status: statusView,
-  staff: ctx => ctx.parts[1] ? staffRequest(ctx) : staffQueue(ctx), calendar: calendarView, about: aboutView,
+  '': homeView, other: otherView, request: requestView, sent: sentView, status: statusView,
+  staff: ctx => ctx.parts[1] === 'reports' ? reportsView(ctx) : ctx.parts[1] ? staffRequest(ctx) : staffQueue(ctx), calendar: calendarView, about: aboutView,
 };
 const $ = id => document.getElementById(id);
 const root = document.documentElement;

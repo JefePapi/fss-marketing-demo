@@ -40,7 +40,15 @@ favicon SVG parses. Security checklist: 11 PASS, 0 FAIL, 0 N/A (README polish re
 No commit created; no server, push or deploy. Browser appearance/AA verification pending.
 JS + CSS 124,076 bytes (+1,711 from baseline); pre-existing size overage parked below.
 
+## 3. Parity pass — IMPLEMENTED, browser validation pending
+
+Opened 2026-11-17 before implementation. Authorized scope: docs/PARITY.md covered and demo-stub rows, browser tests and documentation. Premise: local main 0b90329 has the base flows but lacks the listed parity gaps; supplied test tooling is already installed. Production inspection excluded by the task no-network rule. No commits, pushes or deployments. Baseline: 3 unit test files, 0 failures.
+
+**Close-out (2026-11-17):** implemented the requested requester/staff parity features and simulated email triggers. Added exactly 78 browser row tests (156 cases at the two existing widths), an inventory-title guard, and pure report/action/model tests. Inventory rows untouched; R12 title says 13 choices while task-approved demo scope is about 8 (implemented 8). Existing 36-seed counts unchanged, with relative overdue/due-soon dates and priorities added.
+
+Validation: baseline main 0b90329 = 3 unit test files passing / 0 failing; final = 5 passing / 0 failing, including all original files. Site JS syntax checks, test discovery and diff whitespace checks pass. Offline dependency audit: 0 reported vulnerabilities, no install or network. README security checklist: 12 PASS, 0 FAIL, 0 N/A for source/offline checks. Browser execution attempted, but the sandbox blocked the local server socket (PermissionError); UI/visual verification and independent tester verdict remain pending. JS + CSS: 155,256 bytes, below the approved 200,000-byte limit. No commit created; no push, merge or deploy. Changes remain local on main 0b90329 per the explicit no-commits task instruction.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).
-- Reduce JS + CSS below 100 KB: pre-existing baseline 122,365 bytes; after #2, 124,076. Requires a separate focused size pass.
+- Previous 100 KB budget concern resolved by owner-approved 200 KB budget for #3; keep future changes lean.
