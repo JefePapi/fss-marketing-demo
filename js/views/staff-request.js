@@ -1,4 +1,6 @@
 // Staff view of one request: shared facts once, one lane per service, calendar card, thread, history.
+import { activityBrief } from './activities.js';
+import { hoursChangedSince } from '../hours.js';
 import { h, page, field, input, textarea, select, pill, facts } from '../ui.js';
 import { TEAMS, SERVICES, svc, STAFF, staffName, JOB_STATUS, OVERALL, CAL_STATUS, EVENT_TYPES, AF_CONNECT, facility } from '../config.js';
 import { overallStatus, heskTicketCount, teamsOf, dateText, militaryTimeText as timeText, fmtDate, fmtStamp, detailLines, newJob, ymd } from '../model.js';
@@ -175,7 +177,7 @@ export function staffRequest(ctx) {
       h('button',{id:'print-request',class:'btn',type:'button',onclick:()=>window.print()},'Print request'),
       input('requester-link','text',new URL('#/status/'+req.id,location.href).href,null,{readonly:true}),
       h('button',{id:'copy-requester-link',class:'btn',type:'button',onclick:()=>copyText(document.getElementById('requester-link').value)},'Copy requester link')),
-    factsCard, attachments(req.files),
+    factsCard, req.kind!=='other' && h('section',{id:'activity-card',class:'surface stack'},h('h2',null,facility(e.facilityId).name),activityBrief(facility(e.facilityId),{event:e,today,staff:true}), (e.endDate || e.date)>=today && hoursChangedSince(facility(e.facilityId),req.submittedAt) && h('a',{href:'#/activities/'+e.facilityId},h('span',{'data-test':'hours-changed'},'Hours changed since this was sent'))), attachments(req.files),
     h('section', { class: 'surface stack', id: 'lanes' },
       h('h2', null, req.jobs.length ? `Lanes (${req.jobs.length})` : 'Calendar only: no lanes'),
       h('div', { class: 'lanes' }, req.jobs.map(lane)), addPart),

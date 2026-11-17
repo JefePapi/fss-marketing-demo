@@ -1,9 +1,10 @@
 // The one request form: four short steps.
 import { h, field, input, textarea, select, chips, facts, page } from '../ui.js';
-import { FACILITIES, facility, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CONNECT, OLD_FORMS } from '../config.js';
+import { activities, facility, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CONNECT, OLD_FORMS } from '../config.js';
 import { leadTime, ymd, fmtDM, fmtDate, dateText, timeText, newJob, diffDays, isYmd } from '../model.js';
 import * as store from '../store.js';
 
+import { requestActivityInfo, hoursCheck } from './activities.js';
 import { filePicker, filesPending } from '../files.js';
 import { ccList, ccError, received, defaultFlash } from '../actions.js';
 import { staffName } from '../config.js';
@@ -36,8 +37,11 @@ export function eventFields(d, o) {
   // Boxes that show or hide other boxes do it in place, so the ticked box itself is never replaced.
   const set = (k, show) => e => {
     d[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    o.changed(); if (show) show();
+    o.changed(); if (show) show(); if(['facilityId','endDate','start','end','multi','allDay'].includes(k))drawInfo();
   };
+  const info=h('div',{id:'activity-info-wrap','aria-live':'polite'});
+  const drawInfo=()=>{if(o.info)info.replaceChildren(...requestActivityInfo(facility(d.facilityId),{...d,endDate:d.multi?d.endDate:''},o.today));};
+  drawInfo();
   const e0 = o.errs;
   const endField = field('f-endDate', 'Ends on', input('f-endDate', 'date', d.endDate, set('endDate')), e0.endDate);
   const times = h('div', { class: 'two' },
@@ -50,10 +54,11 @@ export function eventFields(d, o) {
   drawNote();
   const e = o.errs;
   return [
-    field('f-facilityId', 'Which facility?', select('f-facilityId',[['', 'Choose one'], ...FACILITIES.map(f => [f.id, f.name])], d.facilityId, set('facilityId')), e.facilityId),
+    field('f-facilityId', 'Which facility or activity?', select('f-facilityId',[['', 'Choose one'], ...activities().filter(f=>!f.archived || f.id===d.facilityId).map(f => [f.id, f.name+(f.archived?' (archived)':'')])], d.facilityId, set('facilityId')), e.facilityId),
+    o.info && info,
     field('f-title', 'What is it called?', input('f-title', 'text', d.title, set('title'), { maxlength: 80, autocomplete: 'off' }), e.title),
     field('f-description', 'What is happening?', textarea('f-description', d.description, set('description'), { maxlength: 600 }), e.description, 'A few sentences is plenty.'),
-    field('f-date', 'What day is it?', input('f-date', 'date', d.date, ev => { d.date = ev.target.value; o.changed(); drawNote(); }), e.date),
+    field('f-date', 'What day is it?', input('f-date', 'date', d.date, ev => { d.date = ev.target.value; o.changed(); drawNote(); drawInfo(); }), e.date),
     note,
     h('label', { class: 'choice small' }, h('input', { type: 'checkbox', id: 'f-multi', checked: d.multi, onchange: set('multi', show) }), h('span', null, 'It lasts more than one day')),
     endField,
@@ -195,7 +200,7 @@ export function requestView(ctx) {
       field('f-phone', 'Your phone (optional)', input('f-phone', 'tel', d.phone, set('phone'), { autocomplete: 'off', maxlength: 30, placeholder: 'Leave blank in the demo' })),
     ];
   } else if (d.step === 2) {
-    body = eventFields(d, { errs, today, lead: true, changed: save, refresh: () => ctx.refresh() });
+    body = eventFields(d, { errs, today, lead: true, info: true, changed: save, refresh: () => ctx.refresh() });
   } else if (d.step === 3) {
     // Ticking a box shows or hides things in place; the ticked box itself is never replaced.
     const boxes = [];
@@ -260,6 +265,7 @@ export function requestView(ctx) {
             : id === 'social' ? d.kinds.join(', ') : id === 'sponsorship' && d.breakEven ? 'Break-even: ' + d.breakEven : id === 'web' ? d.page : '';
           return h('li', null, h('strong', null, svc(id).short), ` — ${TEAMS[svc(id).team]} team`, extra && h('small', null, extra));
         }))),
+      hoursCheck(facility(ev.facilityId),ev),
       lt.late && leadNote(d.date, today),
       h('p', { class: 'hint' }, 'One request. We send each part to the right team.'),
     ];

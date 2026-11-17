@@ -35,7 +35,16 @@ export const FACILITIES = [
   ['bowling', 'Bowling Center', 'FSWB'], ['youth', 'Youth Programs', 'FSYP'],
   ['lodging', 'Lodging', 'FSH'], ['pet', 'Pet Lodge', 'FSWS'],
 ].map(([id, name, section]) => ({ id, name, section }));
-export const facility = id => FACILITIES.find(f => f.id === id) || { id, name: 'Unknown facility', section: '' };
+let live = FACILITIES;
+export const setActivities = list => { live = list; };
+export const activities = () => live;
+export const MANAGERS = [
+  {id:'mgrA',name:'Avery Lane',label:'Manager A',demo:true},
+  {id:'mgrB',name:'Bo Kim',label:'Manager B',demo:true},
+  {id:'mgrC',name:'Cleo Park',label:'Manager C'},
+  {id:'mgrD',name:'Dev Shah',label:'Manager D'},
+];
+export const facility = id => live.find(f => f.id === id) || { id, name: 'Unknown facility', section: '' };
 
 // Fake staff.
 export const STAFF = [

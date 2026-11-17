@@ -63,6 +63,7 @@ export function staffQueue(ctx) {
 
   return page(
     h('div', { class: 'surface stack' },
+      h('a',{id:'go-emails',href:'#/staff/emails'},'Email log'), h('a',{id:'go-notices',href:'#/staff/notifications'},'Notifications'),
       h('a',{id:'go-reports',href:'#/staff/reports'},'Reports'),
       h('button',{id:'export-requests',class:'btn',type:'button',onclick:()=>download('requests-demo.csv','text/csv;charset=utf-8',toCSV(requestRows(filtered())))},'Download requests (CSV)'),
       h('h1', { tabindex: '-1' }, team === 'all' ? 'Queue' : TEAMS[team] + ' queue'),

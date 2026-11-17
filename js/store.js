@@ -1,8 +1,9 @@
 // One JSON blob in localStorage. If storage is blocked (private mode, a Teams frame),
 // everything still works from memory for this page view.
 import { clearFiles } from './files.js';
-import { VERSION, STORE_KEY } from './config.js';
-import { buildSeeds, FIRST_SEED } from './seed.js';
+import { VERSION, STORE_KEY, STAFF, MANAGERS, setActivities } from './config.js';
+import { buildSeeds, buildActivities, FIRST_SEED } from './seed.js';
+import { normalize, validatePart, applyEdit, canEdit } from './hours.js';
 import { makeId } from './model.js';
 
 const PREFS_KEY = 'mktdemo.prefs', DRAFT_KEY = 'mktdemo.draft';
@@ -18,15 +19,25 @@ function writeJson(storeName, key, value) {
   catch { if (storeName === 'localStorage') memOnly = true; return false; }
 }
 
-const fresh = now => { const requests = buildSeeds(now); return { version: VERSION, counter: FIRST_SEED + requests.length, requests }; };
-
+export function upgrade(saved, now = new Date()) {
+  const n=structuredClone(saved);
+  if(!Array.isArray(n.activities)) {n.activities=buildActivities(now).map(a=>({...a,history:[]}));n.notices=[];n.mail=[];n.seq=1;}
+  n.activities=n.activities.map(normalize);n.notices=(n.notices || []).slice(-100);n.mail=(n.mail || []).slice(-100);n.seq=Number.isInteger(n.seq)?n.seq:1;
+  return n;
+}
+const fresh = now => {
+  const requests=buildSeeds(now), activities=buildActivities(now), a=activities.find(a=>a.id==='bowling'), entry=a.history[0];
+  return {version:VERSION,counter:FIRST_SEED+requests.length,requests,activities,seq:2,
+    notices:[{id:'n1',at:entry.at,activityId:a.id,activityName:a.name,by:entry.by,changes:entry.changes,read:false}],
+    mail:[{at:entry.at,trigger:'activity-updated',activityId:a.id,to:STAFF.map(s=>s.id+'@example.com'),cc:[],subject:`${a.name}: updated by ${entry.by} — would email marketing`,lines:entry.changes}]};
+};
 export function init(now = new Date()) {
-  const saved = readJson('localStorage', STORE_KEY);
-  if (saved && saved.version === VERSION && Array.isArray(saved.requests) && Number.isInteger(saved.counter)) state = saved;
-  else { state = fresh(now); save(); }
+  const saved=readJson('localStorage',STORE_KEY);
+  state=saved && saved.version===VERSION && Array.isArray(saved.requests) && Number.isInteger(saved.counter)?upgrade(saved,now):fresh(now);
+  setActivities(state.activities);save();
 }
 export const save = () => writeJson('localStorage', STORE_KEY, state);
-export function reset(now = new Date()) { state = fresh(now); save(); clearDraft(); clearFiles(); }
+export function reset(now = new Date()) { state = fresh(now); setActivities(state.activities); save(); clearDraft(); clearFiles(); }
 export const memoryOnly = () => memOnly;
 export const requests = () => state.requests;
 export const find = id => state.requests.find(r => r.id === id);
@@ -45,3 +56,32 @@ export function pref(key, value) {
 export const getDraft = () => readJson('sessionStorage', DRAFT_KEY) || draftMem;
 export const setDraft = d => { draftMem = d; writeJson('sessionStorage', DRAFT_KEY, d); };
 export const clearDraft = () => { draftMem = null; writeJson('sessionStorage', DRAFT_KEY, null); };
+
+export const activity = id => state.activities.find(a=>a.id===id);
+export const notices = () => state.notices;
+export const mail = () => state.mail;
+export function readNotice(id) {state.notices.forEach(n=>{if(!id || n.id===id)n.read=true;});save();}
+// Re-check the current demo role at the write boundary, never trust a URL or actor.
+export function saveActivity(id, part, draft, actor, now = new Date()) {
+  const a=activity(id), role=pref('role') || 'marketing', manager=MANAGERS.find(m=>m.id===role);
+  const ctx={staff:!!pref('staff') && !manager,staffSide:!!pref('staff'),manager};
+  if(!['hours','closures','specials','details','admin'].includes(part) || !canEdit(ctx,a,part) || (!a && (id!=='new' || part!=='admin')))return {blocked:true};
+  const errors=validatePart(part,{...draft,id:a?.id || ''},state.activities);
+  if(Object.keys(errors).length)return {errors};
+  const actual={name:manager?manager.name:actor.name,role:manager?'manager':'marketing'};
+  let target=a;
+  if(!target) {
+    const base=draft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'activity';
+    let slug=base,k=2;while(slug==='new' || activity(slug))slug=base+'-'+k++;
+    target=normalize({id:slug,...draft});target.id=slug;
+    const entry={at:now.toISOString(),by:actual.name,role:'marketing',hours:false,changes:['Activity added']};
+    target.updated={at:entry.at,by:actual.name};target.history=[entry];state.activities.push(target);
+  } else {
+    const result=applyEdit(target,part,draft,actual,now.toISOString(),STAFF.map(s=>s.id));
+    if(!result)return {unchanged:true};
+    if(result.notice) {result.notice.id='n'+state.seq++;state.notices.push(result.notice);state.mail.push(result.mail);}
+  }
+  // New row ids are allocated only after a successful save.
+  for(const [key,prefix] of [['closures','c'],['specials','p']])for(const row of target.info[key])if(String(row.id).startsWith('draft-')){let next;do {next=prefix+state.seq++;} while(target.info[key].some(x=>x.id===next));row.id=next;}
+  state.notices=state.notices.slice(-100);state.mail=state.mail.slice(-100);setActivities(state.activities);save();return {activity:target};
+}

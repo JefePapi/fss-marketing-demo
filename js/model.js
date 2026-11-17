@@ -1,5 +1,5 @@
 // Pure functions only: no DOM, no storage. Tested with `node --test tests/*.test.mjs`.
-import { LEAD_DAYS, svc, TEAMS, STAFF, FACILITIES } from './config.js';
+import { LEAD_DAYS, svc, TEAMS, STAFF, activities } from './config.js';
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -113,6 +113,6 @@ export function reports(requests, now = new Date()) {
     month:months.map(m=>[m,rows.filter(r=>r.submittedAt.slice(0,7)===m).length]),
     team:Object.entries(TEAMS).map(([id,name])=>[name,...['new','inprogress','waiting','onhold','done','declined'].map(s=>jobs.filter(j=>j.team===id && j.status===s).length)]),
     staff:STAFF.map(p=>[p.name,jobs.filter(j=>j.owner===p.id && !['done','declined'].includes(j.status)).length,jobs.filter(j=>j.owner===p.id && j.status==='done').length]),
-    facility:[...FACILITIES.map(f=>[f.name,rows.filter(r=>r.event.facilityId===f.id).length]),['Non-event requests',rows.filter(r=>r.kind==='other').length]],
+    facility:[...activities().map(f=>[f.name,rows.filter(r=>r.event.facilityId===f.id).length]),['Non-event requests',rows.filter(r=>r.kind==='other').length]],
   };
 }

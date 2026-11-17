@@ -71,7 +71,37 @@ remain pending. Offline audit: 0 reported vulnerabilities. Security: 12 PASS,
 0 FAIL, 0 N/A (source/offline scope). JS + CSS 155,829 bytes, below 200,000.
 No git/network use, commit, push, merge or deployment.
 
+## 5. Activities, managers, hours and change notices — IMPLEMENTED, browser validation pending
+
+Opened 2026-11-17 before implementation. Build PLAN-HOURS.md sections 1–13;
+owner selected warn-and-send and working-tree-only edits, no branch/commit/push.
+Premise: source and history at main 33c7775 confirm fixed facilities and no hours,
+manager role, activity editors, notices or global mail log. Production read omitted
+under the repository no-network rule. Measured baseline: 6 unit files pass, 0 fail;
+recorded browser baseline: 156 parity + 4 regression cases. Preserve version 1,
+CSP, export headers, parity inventory and desktop performance constraints.
+
+**Close-out (2026-11-17):** PLAN-HOURS sections 1–9 implemented: additive version-1
+activities, Sunday-first hours/closures/specials, manager roles, five editors,
+marketing administration, change history, notifications and global demo email log;
+request form warn-and-send, staff activity card and calendar hours. Sections 10–13:
+23 unit/storage cases and 27 browser scenarios added, documentation and written
+12 PASS / 0 FAIL / 0 N/A security checklist in README. No feature cuts needed.
+Baseline main 33c7775: 6 unit files pass / 0 fail; final: 7 pass / 0 fail.
+All 23 site JS syntax checks and source/whitespace checks pass. Discovery: 214
+browser cases (original 160 + 54 new). Full browser command attempted; socket
+PermissionError blocks the server, so no browser pass or independent tester
+verdict is claimed. Offline render smoke passes; offline audit: 0 vulnerabilities.
+Final JS+CSS: **187,540 bytes** (`wc -c js/*.js js/views/*.js css/app.css`),
+below both the plan 195,000-byte hard stop and owner 200,000-byte limit. No branch, commit, push, merge or
+deployment; edits remain on main 33c7775 in the working tree as requested.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).
 - Previous 100 KB budget concern resolved by owner-approved 200 KB budget for #3; keep future changes lean.
+
+- Hours #5: overnight hours, repeating closures, per-person read state, manager
+  accounts, requester status-page hours, prefilled activity-request link remain out
+  of scope. Owner may revise S56 to reflect partial activity administration; parity
+  inventory rows were deliberately unchanged.

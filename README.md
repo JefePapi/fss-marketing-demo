@@ -34,7 +34,7 @@ Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages
 - If the browser blocks storage (private mode, some Teams tabs) the demo still works from memory and says so in the footer.
 - A real version would store requests on a server so everyone sees the same calendar. That part needs a hosting decision.
 
-Not built on purpose: real email, server uploads, accounts, repeating events, proofing rounds, hiding money fields, admin screens, shared data between visitors, dark mode.
+Not built on purpose: real email, server uploads, accounts, repeating events, proofing rounds, hiding money fields, account administration, shared data between visitors, dark mode.
 
 ## Run it locally
 
@@ -354,3 +354,118 @@ merge or deployment was performed. JS + CSS: 155,829 bytes (limit 200,000).
 
 Counts: **12 PASS, 0 FAIL, 0 N/A** for source/offline checks. Browser and FPS
 verification remain pending, not represented as passing checks.
+
+
+## Activities and hours (BACKLOG #5)
+
+Marketing can add, rename and archive sample activities, assign managers, and edit
+hours, closures, specials and contact details. Turn on Staff view, then choose
+Marketing, Manager A — Avery Lane, or Manager B — Bo Kim. Managers see their assigned,
+active activities; editing another activity or activity administration is blocked
+both in the view and at the store write boundary. This role switch is a demo,
+not a login or production security. Turning Staff view off restores Marketing.
+
+The public activity page shows Sunday–Saturday hours, upcoming closures and
+specials, sample contact details and the last update. Notes for marketing, manager
+names and history appear only on the staff side. Hours and multi-day closures
+support up to two openings per day; overnight hours are outside this demo.
+Closures override the weekly hours. The requester form warns about a closed day
+or a time outside hours, including on Check and send; **it still allows sending**.
+All-day and untimed events receive only a closed-day check. Staff request pages
+show activity information and flag hours changes after submission for upcoming
+events. Calendar event details show the hours on that particular event day.
+
+Every meaningful save records old → new lines and who changed them. A manager save
+also adds an unread marketing notification and a would-email-marketing log entry;
+Marketing edits record history only. Saving unchanged information writes no history,
+notice, mail or updated timestamp. Read state is shared by marketing staff in this
+browser. The global email log also derives request emails from their outboxes.
+**Demo: nothing is sent.** Activity history is capped at 50 entries per activity;
+activity notices and mail at 100 each; the global email view shows at most 100.
+
+The same 12 facility IDs remain in store version 1 (`mktdemo.v1`). Existing saved
+requests and their counter survive the additive upgrade, without a misleading
+seeded notice. Fresh data/reset restores 12 activities and one unread bowling
+notice with its email preview. Archived activity names remain on old requests;
+archived activities leave public lists and new pickers, except an already selected
+archived value stays available with an archived label. New IDs are unique slugs.
+Calendar entries remain derived from requests; closures do not become events.
+
+### New files and routes
+
+- `js/hours.js`: pure hours lookup, event checks, validation, normalization, diffs,
+  edit application, change detection and the shared demo edit rule.
+- `js/views/activities.js`: public list/page, My activities and shared compact info.
+- `js/views/activity-edit.js`: hours, closures, specials, details, name/managers editors.
+- `js/views/notices.js`: marketing notifications and global email log.
+- `tests/hours.test.mjs`: 23 pure/storage scenarios, including the plan's 22 cases.
+- `tests/hours.spec.mjs`: 27 browser scenarios in both existing projects.
+
+Routes: `#/activities`, `#/activities/<id>`, `#/activities/new`,
+`#/activities/<id>/edit/hours|closures|specials|details|admin`, `#/manager`,
+`#/staff/notifications`, `#/staff/emails`. Only Marketing can open the last two.
+The home Hours and info card and the Activities nav link open the public list.
+
+### Hours hooks
+
+| What | Selectors |
+|---|---|
+| Role and navigation | `#demo-role`, `#nav-activities`, `#nav-my`, `#nav-notices`, `#notice-count`, `#go-activities`, `#go-emails`, `#go-notices` |
+| List and manager list | `[data-test="activity-card"][data-activity]`, `[data-test="activity-archived"]`, `#activity-add`, `#my-activities`, `#pick-role` |
+| Activity page | `#activity-name`, `#activity-archived`, `#activity-today`, `#activity-hours tr[data-day="sun"…"sat"]`, `[data-today="1"]` |
+| Details and history | `#activity-closures [data-test="closure"]`, `#activity-specials [data-test="special"]`, `#activity-contact`, `#activity-notes`, `#activity-managers`, `#activity-updated`, `#activity-history [data-test="history-entry"]`, `[data-test="change-line"]` |
+| Editor links and actions | `#edit-hours`, `#edit-closures`, `#edit-specials`, `#edit-details`, `#edit-admin`, `#activity-save`, `#activity-cancel`, `#edit-errors`, `#no-changes`, `#edit-blocked` |
+| Hours editor (day = sun…sat) | `#h-<day>-closed`, `-o1`, `-c1`, `-add2`, `-o2`, `-c2`, `-rm2`, `-err`; `#h-copy-weekdays` |
+| Closures (k = row index from 0) | `#closure-add`, `[data-test="closure-row"]`, `#c-<k>-date`, `-to`, `-label`, `-closed`, `-o1`, `-c1`, `-add2`, `-o2`, `-c2`, `-rm2`, `-remove`, `-err` |
+| Specials | `#special-add`, `[data-test="special-row"]`, `#p-<k>-title`, `-from`, `-to`, `-text`, `-remove`, `-err` |
+| Details/admin | `#a-location`, `#a-description`, `#a-phone`, `#a-email`, `#a-notes`, `#a-name`, `#a-section`, `#a-mgr-mgrA`…`mgrD`, `#a-archived` |
+| Role blocks | `#role-blocked`, `#role-to-marketing`, `#edit-blocked` |
+| Notifications | `[data-test="notice"][data-read="0|1"]`, `[data-test="notice-read"]`, `[data-test="notice-request"]`, `#notices-read-all` |
+| Email log | `#email-log-note`, `[data-test="email-entry"][data-trigger="activity-updated"]` |
+| Request info | `#activity-info-wrap`, `[data-test="hours-warning"][data-level="closed|outside"]`, `[data-test="hours-ok"]`, `details#activity-info`, `#activity-info-hours`, `[data-test="closure-near"]` |
+| Staff/calendar info | `section#activity-card`, `[data-test="hours-changed"]`, `#event-hours` |
+
+### Validation and deviations
+
+Baseline: main `33c7775`, 6 unit files passing, 0 failing. Final: 7 unit files
+passing, 0 failing, including 23 new hours/storage cases. Existing parity inventory
+and its test file are unchanged. Discovery finds **214 browser cases** (156 parity,
+4 regression, 54 hours). All 23 site JS files pass `node --check`; diff whitespace
+and UTF-8/source-format checks pass. Offline render smoke checks cover the new
+views, editor saves, role blocks, notifications/mail and empty-date/date-update
+form rendering. They do not substitute for browser or layout checks.
+
+`npm run test:parity` was attempted; its local server cannot start. A direct server
+attempt confirms `PermissionError: [Errno 1] Operation not permitted` on socket
+creation. None of the 214 browser cases could execute here; parity/regression,
+phone layout, keyboard behavior, 320 px/200% text, private-mode browser behavior,
+network-tab and FPS checks remain for the owner's tester. No independent tester
+verdict is claimed. Offline dependency audit reports 0 vulnerabilities across the
+3 development dependencies; no fresh advisory lookup was made.
+
+All plan sections are implemented. Process overrides: working tree only, no branch,
+commit or push; section 14 option 1 was explicitly selected by the owner. No feature
+cuts were needed. JS + CSS is below the plan's 195,000-byte hard stop and owner's
+200,000-byte limit (**187,540 bytes**, `wc -c js/*.js js/views/*.js css/app.css`). No publication or production
+reads/writes were performed. S56's inventory row stays MISSING; this is a partial
+local activity-admin demo, and any inventory revision is parked for the owner.
+
+### Security checklist for activities/hours #5
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Existing demo/read-only guards retained; role/ownership checks added in view and store; store denial tests pass |
+| No new package | PASS | No install, package or lockfile changes; existing test tooling only |
+| Dependency audit | PASS | Offline npm audit reports 0 vulnerabilities; no fresh network advisory check |
+| No secrets or real personal data | PASS | Invented managers, @example.com seed emails, literal DSN 000-0000 (sample); five-date seed checks pass |
+| Nothing leaves the browser | PASS | No network APIs, form posts or external assets added; source check only, browser network check pending |
+| Typed text stays text | PASS | New DOM uses h() text nodes; no HTML parsing; malicious-label browser scenario written but unable to run |
+| CSV/XLS/ICS file-format safety | PASS | Exports and fixed headers unchanged; export unit tests pass; external applications untested |
+| CSP unchanged | PASS | index.html byte-identical to baseline; existing connect-src/form-action restrictions retained |
+| No official seals or imagery | PASS | No imagery added |
+| noindex retained | PASS | index.html and robots.txt untouched |
+| Demo labels and stable hooks | PASS | Shell banner/footer retained; new demo notes and email disclaimer; existing hooks retained in source |
+| Local storage growth capped | PASS | 50 history entries per activity; 100 notices and activity mail entries; caps tested; requests retain existing behavior |
+
+Counts: **12 PASS, 0 FAIL, 0 N/A** for source/offline checks. Browser verification is
+pending and is not represented as passed.

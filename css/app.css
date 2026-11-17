@@ -316,3 +316,17 @@ th,td { padding:.7rem; text-align:left; border-bottom:1px solid #abc; }
   details { display:block; } details > * { display:block; }
   #demo-banner, #site-footer { display:block !important; }
 }
+
+/* Activity editors: Sunday first, readable wrapping and large phone controls. */
+#activity-hours { width:100%; border-collapse:collapse; }
+#activity-hours th, #activity-hours td { text-align:left; padding:.65rem; border-bottom:1px solid var(--line); }
+#activity-hours [data-today="1"] { background:rgba(31,152,174,.12); }
+#activity-history p, #activity-contact dd, [data-test="change-line"] { overflow-wrap:anywhere; }
+#activity-info { padding:.7rem; }
+#activity-info summary, #activity-history summary { cursor:pointer; min-height:44px; padding:.6rem 0; }
+#activity-save, #activity-cancel, #app input[type="time"], #app input[type="date"] { min-height:44px; }
+#nav { flex-wrap:wrap; }
+#demo-role { max-width:100%; min-height:44px; }
+#activity-editor input[type="checkbox"] { width:44px; height:44px; min-height:44px; }
+.acting { max-width:100%; }
+#demo-role { min-width:0; }

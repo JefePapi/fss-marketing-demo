@@ -1,5 +1,5 @@
 // Seed generator. Everything is invented. Dates are relative to today so the demo never looks stale.
-import { facility, staffName } from './config.js';
+import { FACILITIES, MANAGERS, facility, staffName } from './config.js';
 import { ymd, addDays, parseYmd, newJob, makeId } from './model.js';
 
 export const REQUESTERS = ['Jordan Hale', 'Sam Ortiz', 'Alex Kim', 'Riley Brooks', 'Casey Morgan', 'Dana Whitfield'];
@@ -140,4 +140,32 @@ export function holidayMap(win) {
     put(new Date(y, 4, memorial.getDate() - 3), 'Family Day (sample)');
   }
   return out;
+}
+
+// First occurrence on or after today, using local dates (including leap years).
+export function upcomingHoliday(now, key) {
+  const date = y => key === 'thanksgiving' ? nth(y,10,4,4) : new Date(y,11,key === 'christmas' ? 25 : 24);
+  let d = date(now.getFullYear());
+  if (ymd(d) < ymd(now)) d = date(now.getFullYear()+1);
+  return ymd(d);
+}
+export function buildActivities(now = new Date()) {
+  const assignments = {fitness:['mgrA'],bowling:['mgrA'],outdoor:['mgrA'],community:['mgrA'],club:['mgrB','mgrC'],library:['mgrB'],arts:['mgrB'],auto:['mgrC'],itt:['mgrC'],youth:['mgrC'],lodging:['mgrD'],pet:['mgrD']};
+  const range = (o,c) => [[o,c]], normal=range('09:00','18:00');
+  const wk = (sun,weekday,sat) => structuredClone([sun,...Array(5).fill(weekday),sat]);
+  return FACILITIES.map((f,i)=>{
+    let week=wk(normal,normal,normal);
+    if(f.id==='fitness')week=wk(range('08:00','18:00'),range('05:00','22:00'),range('08:00','18:00'));
+    if(f.id==='auto') {week=wk([],range('09:00','17:00'),range('09:00','17:00'));week[1]=[];}
+    if(f.id==='arts')week=wk(normal,[['10:00','13:00'],['14:00','18:00']],normal);
+    if(f.id==='bowling')week=wk(normal,normal,range('10:00','20:00'));
+    if(f.id==='lodging')week=wk(range('00:00','23:59'),range('00:00','23:59'),range('00:00','23:59'));
+    const closures=[['thanksgiving','Closed for Thanksgiving'],['christmas','Closed for Christmas Day']].map(([key,label],k)=>({id:'c'+(k+1),date:upcomingHoliday(now,key),to:'',label,closed:true,ranges:[]}));
+    if(['fitness','library','bowling'].includes(f.id))closures.push({id:'c3',date:upcomingHoliday(now,'christmaseve'),to:'',label:'Holiday hours',closed:false,ranges:range('09:00','13:00')});
+    const by=MANAGERS.find(m=>m.id===assignments[f.id][0]).name;
+    const stamp=n=>{const d=parseYmd(addDays(ymd(now),-n));d.setHours(9);return d.toISOString();};
+    const specials=['bowling','club','outdoor'].includes(f.id)?[{id:'p1',title:(f.id==='bowling'?'Family bowling special':'Seasonal special')+' (sample)',from:ymd(new Date(now.getFullYear(),now.getMonth()+1,1)),to:ymd(new Date(now.getFullYear(),now.getMonth()+2,0)),text:'Sample offer only.'}]:[];
+    const history=f.id==='bowling'?[{at:stamp(2),by,role:'manager',hours:true,changes:['Sat: 10:00–22:00 → 10:00–20:00']}]:[];
+    return {...f,archived:false,managers:assignments[f.id],info:{location:'Building 000 (sample)',description:'Sample activity information.',phone:'DSN 000-0000 (sample)',email:f.id+'@example.com',notes:'Sample notes for marketing.',week,closures:closures.sort((a,b)=>a.date.localeCompare(b.date)),specials},updated:{at:history[0]?.at || stamp(3+i*2),by},history};
+  });
 }
