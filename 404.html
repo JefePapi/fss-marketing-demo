@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Marketing request demo — page not found</title>
+<script>
+// Send any unknown address back to the demo's home page.
+// On GitHub Pages the site lives under /<repo>/, so keep the first path part there.
+(function () {
+  var parts = location.pathname.split('/');
+  var base = /\.github\.io$/.test(location.hostname) && parts[1] ? '/' + parts[1] + '/' : '/';
+  location.replace(base);
+})();
+</script>
+</head>
+<body>
+<p><strong>Demo — sample data.</strong> That page does not exist. <a href="./">Go to the demo home page</a>.</p>
+<p>Unofficial prototype for 52 FSS Marketing review. Not an official Air Force or government site.</p>
+</body>
+</html>
