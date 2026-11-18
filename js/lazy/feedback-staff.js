@@ -3,8 +3,11 @@ import { feedbackEntries, withFeedbackLock, writeFeedback, feedbackTemporary, pr
 import { download, toCSV } from '../export.js';
 import { fmtStamp } from '../model.js';
 import { TYPES, feedbackRows, issueText } from './feedback-model.js';
-import { feedbackStyles, githubAction, memoryNote } from './feedback.js';
+import { feedbackStyles, githubAction, memoryNote, deliverFeedback } from './feedback.js';
+import { feedbackCheck, TURNSTILE_SITE_KEY } from './feedback-relay.js';
 
+const canReview = () => pref('staff') && (pref('role') || 'marketing') === 'marketing';
+const sending = new Set();
 let refreshInbox;
 window.addEventListener('feedbackchange', () => refreshInbox?.());
 
@@ -18,8 +21,41 @@ export function staffFeedback() {
 
   function change(edit) {
     return withFeedbackLock(() => {
-      if (pref('staff') && (pref('role') || 'marketing') === 'marketing') writeFeedback(edit(feedbackEntries()));
+      if (canReview()) writeFeedback(edit(feedbackEntries()));
     });
+  }
+
+  function retry(entry, opener) {
+    if (!canReview() || sending.has(entry.id)) return;
+    async function send(token) {
+      if (!canReview() || sending.has(entry.id)) return;
+      sending.add(entry.id);
+      opener.disabled = true;
+      opener.setAttribute('aria-busy', 'true');
+      try {
+        const result = await deliverFeedback(entry.id, token, canReview);
+        if (list.isConnected) toast(result.text);
+      } finally {
+        sending.delete(entry.id);
+        const button = document.getElementById('feedback-retry-' + entry.id);
+        if (button) {
+          button.disabled = false;
+          button.removeAttribute('aria-busy');
+        }
+        if (list.isConnected && document.activeElement === document.body)
+          (button || document.getElementById('feedback-read-' + entry.id))?.focus({preventScroll:true});
+      }
+    }
+    if (!TURNSTILE_SITE_KEY) return send();
+    const check = feedbackCheck();
+    const form = h('form', {class:'feedback-form', onsubmit:event => {
+      event.preventDefault();
+      const token = check.token();
+      close();
+      send(token);
+    }}, check.container, h('button', {class:'btn primary', type:'submit'}, 'Send feedback'));
+    const close = openSheet('Try sending again', form, opener, check.remove);
+    check.mount();
   }
 
   function row(entry) {
@@ -34,7 +70,12 @@ export function staffFeedback() {
         h('time', {datetime:entry.at}, fmtStamp(entry.at)), !entry.read && h('span', {class:'feedback-new'}, 'Unread')),
       h('p', {class:'feedback-message'}, entry.message),
       h('p', {class:'hint'}, entry.page + ' · ' + entry.route + ' · Design: ' + entry.theme),
+      h('p', {class:'feedback-status'}, entry.delivery === 'sent'
+        ? ('Sent' + (entry.issue ? ' · #' + entry.issue : '')) : 'Only in this browser'),
       h('div', {class:'row wrap'}, toggle,
+        entry.delivery !== 'sent' && h('button', {type:'button', class:'btn', id:'feedback-retry-' + entry.id,
+          disabled:sending.has(entry.id),
+          'aria-busy':String(sending.has(entry.id)), onclick:event => retry(entry, event.currentTarget)}, 'Try sending again'),
         action('Copy as text', async event => {
           const from = event.currentTarget, text = issueText(entry);
           if (await copyText(text)) toast('Feedback copied.');

@@ -11,10 +11,10 @@ let state = null, memOnly = false, prefs = null, draftMem = null;
 
 const feedbackKey = 'mktdemo.feedback';
 let feedbackMemory = null;
-export async function withFeedbackLock(change) {
+export async function withFeedbackLock(change, key = feedbackKey) {
   let acquired = false;
   try {
-    if (globalThis.navigator?.locks) return await navigator.locks.request(feedbackKey, () => {
+    if (globalThis.navigator?.locks) return await navigator.locks.request(key, () => {
       acquired = true;
       return change();
     });

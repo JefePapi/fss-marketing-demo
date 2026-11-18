@@ -71,9 +71,10 @@ export function toast(msg) {
 // Popover on desktop, bottom sheet on phone (CSS decides). Esc, outside tap and Close all close it.
 let closeCurrent = null;
 export const closeSheet = () => { if (closeCurrent) closeCurrent(); };
-export function openSheet(title, body, returnTo) {
+export function openSheet(title, body, returnTo, onClose) {
   closeSheet();
   const close = () => {
+    onClose?.();
     wrap.remove(); document.removeEventListener('keydown', key); closeCurrent = null;
     if (returnTo && returnTo.focus) returnTo.focus();
   };

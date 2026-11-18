@@ -219,6 +219,26 @@ the configured local server were blocked here. The local branch is based on
 `270879e` with an uncommitted working tree and a read-only git directory.
 [Measurements, tests and screenshots](docs/FEEDBACK-NOTES.md).
 
+## 13. Send feedback to the shared relay — implemented and verified in Firefox
+
+Opened 18 Nov. Joseph chose the Cloudflare relay at 17:54. At `56ccbaf`
+(`origin/main`) the form saves locally and the relay adapter is empty.
+Wire the deployed Worker to the form and Marketing inbox, keeping the local
+copy first. The owner reports the Worker is awaiting secrets (503).
+
+**Close-out, 18 Nov.** Browser-first saving, delivery status, explicit
+staff retry and conditional Turnstile are implemented on `relay` at base
+`56ccbaf`. The deployed Worker source matches the supplied copy. Setup
+requires the public widget key and two Worker secrets.
+
+All 74 site unit cases and 9 Worker cases passed. Firefox passed 297
+browser cases per design, with zero new failures against #12. All 15
+scroll cases reached 58.5–60.0 FPS. Largest initial design
+219,528 / 220,000 bytes. Security checklist 12 PASS, 0 FAIL, 0 N/A
+(offline audit). The sandbox blocked the stock parity server and live DNS.
+The work is local and uncommitted because `.git` is read-only.
+[Tests, limitations and measurements](docs/FEEDBACK-NOTES.md#13--shared-feedback-relay-18-nov).
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

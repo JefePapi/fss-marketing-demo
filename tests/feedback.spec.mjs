@@ -5,6 +5,11 @@ const banner = '[data-test=feedback-banner]', footer = '[data-test=feedback-foot
 const saved = page => page.evaluate(() => JSON.parse(localStorage.getItem('mktdemo.feedback')));
 const route = '#/staff?show=all';
 const sample = 'Add <sample> & a second review?';
+// These #12 cases exercise the public fallback without contacting the live relay.
+test.beforeEach(async ({page}) => {
+  await page.route('https://fss-demo-feedback.jefepapi.workers.dev/feedback',
+    route => route.fulfill({status:503, json:{ok:false, error:'not configured'}}));
+});
 const thanks = 'Thanks — your feedback is saved in this demo.';
 
 test('Feedback entry points on visitor, staff, manager, shared and fallback pages', async ({page}) => {
@@ -43,7 +48,7 @@ test('Feedback is lazy, saves locally, and prepares a public issue only on reque
   page.on('request', r => assets.add(new URL(r.url()).pathname.split('/').pop()));
   await page.goto('./?theme=a-light' + route);
   await expect(page.locator('#queue-list')).toBeVisible();
-  for (const file of ['feedback.js','feedback.css','feedback-model.js','feedback-staff.js']) expect(assets.has(file)).toBe(false);
+  for (const file of ['feedback.js','feedback.css','feedback-model.js','feedback-staff.js','feedback-relay.js']) expect(assets.has(file)).toBe(false);
   await page.locator(banner).click();
   await expect(page.locator('#sheet')).toBeVisible();
   await expect.poll(() => assets.has('feedback.css')).toBe(true);

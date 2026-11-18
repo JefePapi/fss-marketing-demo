@@ -1,7 +1,7 @@
 # Marketing request demo — sample data, unofficial
 
 **Unofficial prototype for 52 FSS Marketing review. Not an official Air Force or government site.**
-Every sample event, name and email is made up. Requests and feedback are saved in the browser. Visitors can choose to share feedback publicly on GitHub.
+Every sample event, name and email is made up. Requests stay in the browser. Saving feedback keeps a local copy and tries to send it privately to Marketing. Visitors can also open a public GitHub draft.
 
 Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages, repo `fss-marketing-demo`).
 
@@ -60,22 +60,28 @@ from this code budget. See [the #10 verification record](SWITCHER-NOTES.md).
 Open **Feedback** in the demo banner or footer on any page. Desktop also has a
 floating button that moves clear of page controls. Choose Feedback, Suggestion
 or Bug, enter a message and optionally add a sample name. **Save feedback**
-records the page, route, design and submission time. The latest 200 entries
-stay in this browser under `mktdemo.feedback`. If browser storage fails, the
+saves the local copy first, then makes one attempt to send it privately to
+Marketing. The relay receives the type, message, optional sample name, page,
+route and design. The relay POST excludes the local timestamp and read marker.
+The latest 200 entries stay in this browser under `mktdemo.feedback`.
+If browser storage fails, the
 sheet explains that changes last for the current page session.
 
 To bring a suggestion to Joseph, choose **Also post to GitHub** after saving
 or from a staff inbox row. This opens a public issue draft for
 **JefePapi/fss-marketing-demo** in a new tab. Sign in to GitHub, review the
 prefilled details and choose **Create** there. Opening the draft shares its
-contents with GitHub. The local inbox cannot see whether an issue was created.
+contents with GitHub. The delivery marker tracks only the private relay.
 Long messages may be shortened for the link. **Copy as text** keeps the full
 submission. The repository owner creates the `feedback` label. The issue link
 and the `.github/ISSUE_TEMPLATE/feedback.md` template both request that label.
 
 In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
 them read or unread, confirm deletion of one entry and download the current
-filter as CSV. The Queue badge counts unread feedback across all types.
+filter as CSV. Each entry shows **Sent · #12** (its private issue number)
+or **Only in this browser**. Use **Try sending again** for one manual retry.
+Entries saved before the relay was added are eligible too. The Queue badge
+counts unread feedback across all types.
 Managers can submit from their pages. Inbox access follows Notifications.
 **Reset demo data** clears the browser inbox. Published issues live on GitHub.
 
@@ -84,28 +90,21 @@ Email log and Reports also load on their own routes. `npm run size` reports
 on-demand feedback bytes separately from the initial design budget.
 [Verification and screenshots](docs/FEEDBACK-NOTES.md).
 
-### Later option
+### Switch on shared sending
 
-Automatic forwarding needs an owner and hosting decision. A future service
-could create GitHub issues, post to a Microsoft Form or SharePoint list, or
-send email. The local-first adapter lives in `js/lazy/feedback.js`.
-`FEEDBACK_RELAY_URL = ''` disables forwarding and `BACKENDS.relay` has no
-implementation. A GitHub relay would accept this contract.
+The deployed Cloudflare relay currently awaits configuration. The form
+explains a 503, a rate limit, or a failed send and keeps the public GitHub
+fallback available. Only a successful relay confirmation displays
+**Sent to the marketing team.**
 
-```http
-POST /feedback
-Content-Type: application/json
-
-{"type":"Suggestion","message":"Sample idea","name":"","page":"Queue","route":"#/staff","theme":"a","at":"2026-11-18T12:00:00Z"}
-```
-
-The server validates and rate-limits submissions, allows only the approved
-demo origin, holds the GitHub credential server-side, creates an issue with
-the `feedback` label and returns JSON `{"issueUrl":"https://github.com/JefePapi/fss-marketing-demo/issues/123"}`.
-Enabling it requires implementing the relay adapter, setting the endpoint,
-updating the local-only disclosure and changing CSP `connect-src` from
-`'none'` to that one relay origin. Local saving must still succeed when the
-relay is unavailable.
+Create a Turnstile widget for `jefepapi.github.io` and set its public
+site key in `js/lazy/feedback-relay.js`. Add `TURNSTILE_SECRET` and
+`GITHUB_TOKEN` to the deployed Worker as secrets. The latter needs Issues
+write access to the private `JefePapi/fss-demo-feedback` repository.
+With the public key empty, the browser skips the widget and submits without
+a token. Once configured, only opening the feedback form or staff retry
+form loads the widget. Submitting makes one credential-free relay POST
+with a ten-second timeout. [Worker setup and privacy](relay/README.md).
 
 ## Limits — please read
 
@@ -704,3 +703,22 @@ Totals **12 PASS, 0 FAIL, 0 N/A**.
 | Browser storage | PASS | Feedback has a separate, 200-entry cap, field limits, a disclosed memory fallback and a tested reset. |
 
 Totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #13
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | The Marketing inbox keeps the Notifications guard. Staff retry checks the active role again before sending. |
+| Packages | PASS | The package changes add the Worker test command and include it in the test suite. Dependencies and the lockfile match the base. |
+| Dependency audit | PASS (offline) | The offline audit reports zero known vulnerabilities in the three development dependencies. DNS blocked a fresh registry advisory check. |
+| Secrets and personal data | PASS | The adapter sends the six feedback fields and an available challenge token. It omits cookies and referrer. Tokens stay out of browser storage. Worker secrets stay server-side. |
+| Outbound data | PASS | Intercepted requests verify one user-initiated POST, the allowed fields and the absence of GitHub traffic. The optional public draft retains its disclosure and link protections. |
+| Typed text | PASS | The UI uses DOM text nodes. Worker response bodies cannot supply display messages. The public draft retains URL encoding. |
+| File formats | PASS | The Worker and adapter use JSON. CSV and calendar tests cover their existing headers and spreadsheet escaping. Source syntax and UTF-8 checks pass. |
+| CSP | PASS | The change permits the relay connection and the Turnstile script and frame origins. Form posts stay disabled. The fallback HTML has no CSP. |
+| Official imagery | PASS | The change adds no images, logos or official marks. |
+| Search indexing | PASS | Both HTML documents retain noindex. The robots file matches the base. |
+| Demo labels and hooks | PASS | The existing banner, footer and test hooks remain present. Delivery appears in a live status next to the thank-you heading. |
+| Browser storage | PASS | The capped inbox saves before POST, preserves read state, handles #12 entries and retains its memory fallback. A pending response updates only an existing row. |
+
+Totals **12 PASS, 0 FAIL, 0 N/A** within the audit scope above.

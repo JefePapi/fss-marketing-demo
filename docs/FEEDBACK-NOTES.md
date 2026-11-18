@@ -81,3 +81,68 @@ The [written checklist](../README.md#security-checklist-for-12) records
 The full local capture set is under `test-results/feedback-12/`. Files named
 `<design>-<width>-form.png` and `<design>-<width>-inbox.png` cover all five
 designs at 390 and 1280 px.
+
+## #13 — Shared feedback relay, 18 Nov
+
+Joseph chose the deployed Cloudflare relay at 17:54. The form now saves the
+sample locally before attempting private delivery. Its thank-you state reports
+the outcome and keeps the optional public GitHub draft. Marketing sees the
+private issue number on success. A manual retry can send a local entry,
+including entries created under #12. The browser never stores a challenge
+token. [Worker deployment and activation](../relay/README.md).
+
+### Verification
+
+- **74 site unit tests passed** against 72 at `56ccbaf`. The added cases
+  cover response mapping, context length, and a ten-second timeout while
+  reading a stalled response. All **9 Worker tests passed**. A temporary
+  mutation that treated a nonempty string as a successful confirmation
+  failed the status test.
+- **1,485 Firefox browser cases passed** across default, Current, Night Wall
+  Light, Mission Control and Ribbon Glass. Each run had 297 passes and the
+  two existing desktop-only skips on phone. The passing test names include
+  every applicable case in the recorded #12 baseline. This run repeats the
+  41 design and Firefox checks for each design. The Chromium-specific
+  shadow assertion is excluded.
+- The Firefox harness served repo files by request interception at the test
+  origin. Relay and widget stubs exercised private delivery, unconfigured
+  service, throttling, network abort, legacy retry and a fresh challenge
+  for retry. The tests inspect the stored copy while the POST is pending,
+  credential and referrer settings, exact JSON fields and absent widget
+  traffic with an empty key. Overlapping sends also share an attempt with
+  Web Locks disabled. A configured-widget rerun on both viewports in all
+  five designs confirmed that the widget matches the active design and that
+  a widget cleanup error still lets the sheet close and report delivery.
+  An additional 390 px check verified that status text fits and a
+  rate-limited retry becomes available again in every design.
+- The stock `npm run test:parity` local server could not start in the
+  sandbox. Chromium and live issue creation were not exercised. DNS also
+  blocked the read-only Worker health check and a fresh advisory audit.
+  The owner reports that the live Worker awaits secrets.
+- All source syntax, UTF-8 and diff whitespace checks passed. The offline
+  audit reports zero known vulnerabilities. The #13 security checklist
+  records 12 PASS, 0 FAIL and 0 N/A. [Written checklist](../README.md#security-checklist-for-13).
+
+### Size and scrolling
+
+The largest initial design is 219,528 bytes. All feedback modules and CSS
+together are 19,793 bytes on demand. Worker files are outside the browser
+budget. Each scroll figure is average FPS over the repository's four-second
+wheel workload at 1920 × 1080 in Firefox at native CPU speed.
+
+| Design | Initial bytes | Home | Queue | Activities |
+|---|---:|---:|---:|---:|
+| a | 217,740 | 58.5 | 60.0 | 59.5 |
+| a-light | 219,528 | 58.5 | 60.0 | 60.0 |
+| b | 217,897 | 59.8 | 60.0 | 60.0 |
+| c | 217,460 | 60.0 | 60.0 | 60.0 |
+| current | 217,811 | 60.0 | 60.0 | 60.0 |
+
+Reproduce a row with `node perf/staff-scroll.mjs offline relay-13 1 a firefox feedback`,
+substituting the design ID.
+
+### Phone check
+
+Open Feedback in the banner, save a sample suggestion and read its delivery
+status. From Staff view → Queue → Feedback, check that the local row offers
+**Try sending again**. After a confirmed send, the row shows its issue number.

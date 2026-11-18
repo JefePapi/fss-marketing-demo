@@ -4,7 +4,7 @@ export function buildEntry({type, message, name, page, route, theme}, id, at) {
   message = message.trim();
   if (!TYPES.includes(type) || !message || message.length > 2000 || name.length > 60)
     throw new Error('Invalid feedback fields');
-  return {id, type, message, name:name.trim(), page, route, theme, at, read:false};
+  return {id, type, message, name:name.trim(), page, route, theme, at, read:false, delivery:'local'};
 }
 
 export const prependEntry = (entries, entry) => [entry, ...entries].slice(0, 200);

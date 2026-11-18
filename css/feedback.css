@@ -27,3 +27,17 @@ html[data-theme=current] .sheet:has(.feedback-body) > .surface { background:#fff
 @media (max-width:460px) {
   html[data-theme=current] .feedback-form .chip span { padding:5px 10px; font-size:.86rem }
 }
+
+.feedback-status { color:inherit; font-weight:600; overflow-wrap:anywhere }
+.feedback-check { min-width:0; max-width:100% }
+.feedback-form button[aria-busy=true],.feedback-card button[aria-busy=true] { opacity:.75 }
+.feedback-form button[aria-busy=true]::after,.feedback-card button[aria-busy=true]::after {
+  content:""; display:inline-block; width:.8em; height:.8em; margin-inline-start:.55em;
+  border:2px solid currentColor; border-inline-end-color:transparent; border-radius:50%;
+  animation:feedback-spin .8s linear infinite;
+}
+.still :is(.feedback-form,.feedback-card) button[aria-busy=true]::after { animation:none }
+@keyframes feedback-spin { to { transform:rotate(1turn) } }
+@media (prefers-reduced-motion:reduce) {
+  .feedback-form button[aria-busy=true]::after,.feedback-card button[aria-busy=true]::after { animation:none }
+}
