@@ -66,6 +66,7 @@ export function staffQueue(ctx) {
       h('h1', { tabindex: '-1' }, team === 'all' ? 'Queue' : TEAMS[team] + ' queue'),
       h('div', {class:'queue-tools'}, h('a',{id:'go-emails',href:'#/staff/emails'},'Email log'), h('a',{id:'go-notices',href:'#/staff/notifications'},'Notifications'),
       h('a',{id:'go-reports',href:'#/staff/reports'},'Reports'),
+      h('a',{id:'go-feedback',href:'#/staff/feedback'},'Feedback', h('span',{class:'count',id:'feedback-count','aria-label':'Unread feedback'},store.feedbackEntries().filter(e=>!e.read).length)),
       h('button',{id:'export-requests',class:'btn',type:'button',onclick:()=>download('requests-demo.csv','text/csv;charset=utf-8',toCSV(requestRows(filtered())))},'Download requests (CSV)')),
       h('div', {class:'queue-tabs'}, h('nav', { class: 'tabs', 'aria-label': 'Team' }, [['all', 'All'], ...Object.entries(TEAMS)].map(([t, l]) => tab('team-' + t, l, t === team, href(t, show), sorted(t).length))),
       h('nav', { class: 'tabs small', 'aria-label': 'Show' }, Object.entries(SHOWS).map(([s, l]) => tab('show-' + s, l, s === show, href(team, s))))),

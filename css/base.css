@@ -118,3 +118,28 @@ html:not([data-theme=current]) [data-test=area-today][data-open="1"] { color:var
   .report-grid > section:has(#report-team) { flex:2 1 40rem }
   .request-tools { grid-template-columns:minmax(9em,1fr) auto minmax(12em,2fr) auto }
 }
+
+.feedback-link {
+  background:transparent; border:0; padding:0 6px; color:inherit;
+  font:600 .8rem/1.2 system-ui,sans-serif; text-decoration:underline; text-underline-offset:3px;
+  min-height:44px; cursor:pointer;
+}
+#feedback-open { display:none }
+#go-feedback { display:inline-flex; gap:5px; align-items:center }
+@media (max-width:460px) {
+  .design-label { display:none }
+  #demo-banner { gap:6px; white-space:nowrap }
+  #theme-select { max-width:35vw }
+}
+@media (max-width:355px) { .demo-long { display:none } }
+@media screen and (min-width:900px) {
+  #feedback-open {
+    position:fixed; right:12px; bottom:12px; z-index:45; display:inline-flex; align-items:center;
+    justify-content:center; gap:8px; width:130px; height:48px; padding:0; border-radius:999px;
+    will-change:transform; transition:transform .12s,opacity .12s;
+  }
+  .scrolling #feedback-open,#feedback-open.docked { top:2px; bottom:auto; translate:none!important; min-height:44px; height:44px }
+  #feedback-open svg { color:var(--amber,currentColor) }
+  body:has(.sheet-wrap,dialog[open]) #feedback-open { visibility:hidden }
+}
+@media print { .feedback-link { display:none!important } }

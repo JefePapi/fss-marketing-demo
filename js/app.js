@@ -1,10 +1,10 @@
 // Hash router and page shell. No network calls anywhere in this app.
 import { h, select, closeSheet, confirmSheet, toast } from './ui.js';
 import { THEMES, currentTheme, setTheme, initTheme, themeStepArt, themeBrand } from './theme.js';
+import { initFeedbackControls } from './feedback-controls.js';
 import { STAFF, MANAGERS, staffName } from './config.js';
 import * as store from './store.js';
 import { otherView } from './views/other.js';
-import { reportsView } from './views/reports.js';
 import { homeView } from './views/home.js';
 import { requestView, dropDraft } from './views/request.js';
 import { sentView } from './views/sent.js';
@@ -12,23 +12,35 @@ import { statusView } from './views/status.js';
 import { staffQueue } from './views/staff-queue.js';
 import { staffRequest } from './views/staff-request.js';
 import { calendarView } from './views/calendar.js';
-import { aboutView } from './views/about.js';
 
 import { activitiesView, managerView } from './views/activities.js';
 import { dropActivityDraft } from './views/activity-edit.js';
-import { noticesView, emailsView } from './views/notices.js';
 
 let scrollTimer;
 window.addEventListener('scroll', () => {
   document.documentElement.classList.add('scrolling');
   clearTimeout(scrollTimer);
-  scrollTimer = setTimeout(() => document.documentElement.classList.remove('scrolling'), 150);
+  scrollTimer = setTimeout(() => {
+    document.documentElement.classList.remove('scrolling');
+    window.dispatchEvent(new Event('scrollidle'));
+  }, 150);
 }, { passive: true });
 
 const VIEWS = {
   '': homeView, other: otherView, request: requestView, sent: sentView, status: statusView,
   activities: activitiesView, manager: managerView,
-  staff: ctx => ctx.manager ? h('div',{class:'card',id:'role-blocked'},h('h1',{tabindex:-1},'This page is for Marketing'),h('button',{class:'btn',id:'role-to-marketing',onclick:()=>{store.pref('role','marketing');render();}},'Switch to Marketing')) : ctx.parts[1] === 'notifications' ? noticesView(ctx) : ctx.parts[1] === 'emails' ? emailsView(ctx) : ctx.parts[1] === 'reports' ? reportsView(ctx) : ctx.parts[1] ? staffRequest(ctx) : staffQueue(ctx), calendar: calendarView, about: aboutView,
+  about: ctx => import('./lazy/about.js').then(m => m.aboutView(ctx)),
+  staff: ctx => {
+    if (ctx.manager) return h('div',{class:'card',id:'role-blocked'},h('h1',{tabindex:-1},'This page is for Marketing'),h('button',{class:'btn',id:'role-to-marketing',onclick:()=>{store.pref('role','marketing');render();}},'Switch to Marketing'));
+    switch (ctx.parts[1]) {
+      case 'feedback': return import('./lazy/feedback-staff.js').then(m => m.staffFeedback(ctx));
+      case 'notifications': return import('./lazy/notices.js').then(m => m.noticesView(ctx));
+      case 'emails': return import('./lazy/notices.js').then(m => m.emailsView(ctx));
+      case 'reports': return import('./lazy/reports.js').then(m => m.reportsView(ctx));
+      default: return ctx.parts[1] ? staffRequest(ctx) : staffQueue(ctx);
+    }
+  },
+  calendar: calendarView,
 };
 const $ = id => document.getElementById(id);
 const root = document.documentElement;
@@ -51,8 +63,8 @@ function go(hash, replace) {
 function setStaff(on) { store.pref('staff', !!on); if(!on)store.pref('role','marketing'); }
 
 function resetDemo(from) {
-  confirmSheet('Clear everything you added in this browser?', 'Yes, reset the demo', () => {
-    store.reset(); dropDraft(); dropActivityDraft();
+  confirmSheet('Clear everything you added in this browser?', 'Yes, reset the demo', async () => {
+    await store.withFeedbackLock(() => store.reset()); dropDraft(); dropActivityDraft();
     toast('Demo data is back to the samples.');
     if (location.hash === '#/about' || location.hash.startsWith('#/staff?') || location.hash === '#/staff') render(); else go('#/');
   }, from);
@@ -81,7 +93,7 @@ function drawNav(ctx) {
     ...(settings.length ? [h('div', {class:'identity-controls'}, settings)] : []), toggle);
 }
 
-function render(opts = {}) {
+async function render(opts = {}) {
   const { parts, params } = parse();
   const name = Object.hasOwn(VIEWS, parts[0] || '') ? parts[0] || '' : ''; // unknown route -> Home
   const readonly = name === 'calendar' && params.get('readonly') === '1'; // read from the URL on every render
@@ -110,7 +122,14 @@ function render(opts = {}) {
   activeContext = ctx;
   const app = $('app');
   app.className = 'route-' + (name || 'home');
-  app.replaceChildren(VIEWS[name](ctx));
+  let view = VIEWS[name](ctx);
+  if (view instanceof Promise) {
+    app.replaceChildren(h('p', {role:'status'}, 'Loading page…'));
+    try { view = await view; }
+    catch { view = h('button', {class:'btn', onclick:() => render()}, 'Page could not load. Try again'); }
+    if (activeContext !== ctx) return;
+  }
+  app.replaceChildren(view);
 
   if (!same || opts.top) {
     window.scrollTo(0, 0);
@@ -164,6 +183,7 @@ window.addEventListener('designerror', () => {
 });
 
 store.init();
+initFeedbackControls();
 $('pause-motion').addEventListener('click', () => { store.pref('still', !store.pref('still')); drawMotion(); });
 drawMotion();
 window.addEventListener('hashchange', () => render());

@@ -1,0 +1,29 @@
+/* Loaded with the sheet or inbox. Shared controls supply the active design's typography and palette. */
+.feedback-body,.feedback-form,.feedback-done,.feedback-list,.card.feedback-card,.feedback-share {
+  display:grid; min-width:0; gap:14px;
+}
+.feedback-body .field,.feedback-body .chips { margin:0; min-width:0 }
+.feedback-form .chiprow { display:flex; flex-wrap:wrap; gap:6px }
+.feedback-form .chip span { min-height:44px }
+.feedback-form textarea { resize:vertical; min-height:6em }
+.feedback-form #feedback-length { justify-self:end; margin-top:-10px; font-variant-numeric:tabular-nums }
+.feedback-body :is(.err,.hint),.feedback-card :is(p,.hint) { margin-bottom:0 }
+.feedback-body #feedback-from { font-size:.87rem }
+.feedback-done { padding-inline-start:14px; border-inline-start:3px solid var(--picker-active) }
+.feedback-done h3 { max-width:30ch }
+.feedback-share { justify-items:start; gap:6px }
+.feedback-done > button,.feedback-form > button { justify-self:start }
+.feedback-tools,.feedback-byline { display:flex; align-items:center; gap:10px 16px; flex-wrap:wrap }
+.feedback-tools { align-items:end }
+.feedback-tools .field { margin:0; min-width:10em }
+.feedback-byline time,.feedback-new { font-size:.86rem; color:var(--picker-muted) }
+.card.feedback-card { border-inline-start:3px solid var(--picker-edge) }
+.feedback-card[data-read=false] { border-inline-start-color:var(--picker-active) }
+.feedback-card .feedback-message { white-space:pre-wrap; overflow-wrap:anywhere }
+.surface.feedback-empty { padding:28px; border:1px dashed var(--picker-edge) }
+.feedback-empty p { margin-top:.6em }
+
+html[data-theme=current] .sheet:has(.feedback-body) > .surface { background:#fff }
+@media (max-width:460px) {
+  html[data-theme=current] .feedback-form .chip span { padding:5px 10px; font-size:.86rem }
+}

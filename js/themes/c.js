@@ -63,7 +63,7 @@ export function ribbon(prefix) {
     svg('path', { d: paneShape, transform: 'translate(5 4) scale(.986 .98)', fill: 'none', stroke: '#f5fdff', opacity: .6 }));
 }
 
-export const shortcutIcon = route => icon(route === 'other' ? 'edit' : route);
+export const shortcutIcon = route => icon({other:'edit',activities:'clock'}[route] || route);
 export const shortcutArrow = () => icon('corner');
 
 export function hero() {

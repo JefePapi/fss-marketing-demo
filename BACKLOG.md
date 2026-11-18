@@ -197,6 +197,28 @@ Security checklist totals were 12 PASS, 0 FAIL and 0 N/A. See the
 The sandbox blocked the configured parity server and Chromium launch.
 Local working tree only, based on `d13f453`, alongside uncommitted #10.
 
+## 12. Feedback and suggestions — implemented and verified in Firefox
+
+Opened 18 Nov at Joseph’s request. At `270879e` the shared shell has no feedback
+control, store or staff inbox. Add browser-local submissions across all five
+designs, with a Marketing review queue and on-demand assets. Joseph’s 16:24 update adds
+a user-clicked, prefilled public GitHub issue and a disabled future relay adapter.
+
+**Close-out, 18 Nov.** All pages offer browser-local feedback with optional
+public GitHub issue drafts. Marketing can review, filter, copy, export and
+manage entries from the Queue. Reset clears the inbox. The repository owner
+creates the GitHub label.
+
+All 72 unit cases passed versus 67 on the base commit. Each of the five
+designs passed 242 applicable Firefox cases, plus 41 design and Firefox
+checks across the suite. All 15 scroll measurements reached 59–60 FPS.
+The largest initial payload is 219,491 / 220,000 bytes, with 12,411 bytes
+of feedback code and CSS loaded on demand. Security checklist totals were
+12 PASS, 0 FAIL and 0 N/A. Chromium remains pending because its launch and
+the configured local server were blocked here. The local branch is based on
+`270879e` with an uncommitted working tree and a read-only git directory.
+[Measurements, tests and screenshots](docs/FEEDBACK-NOTES.md).
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

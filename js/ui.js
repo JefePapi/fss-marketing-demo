@@ -80,8 +80,10 @@ export function openSheet(title, body, returnTo) {
   const key = e => {
     if (e.key === 'Escape') return close();
     if (e.key !== 'Tab') return;
-    const f = [...sheet.querySelectorAll('a,button,input,select,textarea')], first = f[0], last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    const f = [...sheet.querySelectorAll('a[href],button,input,select,textarea')]
+      .filter(el => !el.disabled && el.getClientRects().length && (el.type !== 'radio' || el.checked));
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !f.includes(document.activeElement))) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
   const btn = h('button', { class: 'btn', id: 'sheet-close', type: 'button', onclick: close }, 'Close');

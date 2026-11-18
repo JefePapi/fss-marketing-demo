@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'">
+<meta http-equiv="x-dns-prefetch-control" content="off">
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="light">
 <title>Marketing request demo — sample data, unofficial</title>
@@ -15,8 +16,9 @@
 <body>
 <div class="atmo" aria-hidden="true"><i></i><i></i><i></i></div>
 
-<p class="demo-banner" id="demo-banner" data-test="demo-banner"><strong>Demo — sample data</strong>
-  <label class="design-control" hidden>Design: <select id="theme-select" data-test="theme-select"></select></label>
+<p class="demo-banner" id="demo-banner" data-test="demo-banner"><strong>Demo<span class="demo-long"> — sample data</span></strong>
+  <label class="design-control" hidden><span class="design-label">Design:</span> <select aria-label="Design" id="theme-select" data-test="theme-select"></select></label>
+  <button type="button" class="feedback-link" data-test="feedback-banner">Feedback</button>
 </p>
 
 <header class="site-head">
@@ -42,10 +44,15 @@
   <p id="store-note" hidden>Changes will not be kept after you close this page.</p>
   <p class="foot-links">
     <a href="#/about" id="about-link">About this demo</a>
+    <button type="button" class="feedback-link" data-test="feedback-footer">Feedback</button>
     <button type="button" id="pause-motion" aria-pressed="false">Pause motion</button>
   </p>
 </footer>
 
+<button type="button" class="btn primary" id="feedback-open" data-test="feedback-open">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 11a8 8 0 0 1-8 8H9l-6 3 1.5-6A8 8 0 1 1 21 11Z"/><path d="M8 10h8m-8 4h5"/></svg>
+  Feedback
+</button>
 <script type="module" src="./js/app.js"></script>
 </body>
 </html>

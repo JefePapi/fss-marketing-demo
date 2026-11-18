@@ -1,7 +1,7 @@
 # Marketing request demo — sample data, unofficial
 
 **Unofficial prototype for 52 FSS Marketing review. Not an official Air Force or government site.**
-Every event, name and email in it is made up. Nothing typed into it is sent anywhere.
+Every sample event, name and email is made up. Requests and feedback are saved in the browser. Visitors can choose to share feedback publicly on GitHub.
 
 Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages, repo `fss-marketing-demo`).
 
@@ -50,10 +50,62 @@ in `./?theme=c#/request` or `./?theme=b#/calendar?readonly=1`. Short names
 back to the saved design or Night Wall. The preference uses `mktdemo.theme`.
 
 Run `npm run size` to check the 220,000-byte unminified initial JS + CSS
-budget. It includes all shared and view JS, base CSS, and the selected
+budget. It includes all initial shared and view JS, base CSS, and the selected
 design’s module and stylesheets. The light variant shares Night Wall’s art
 and adds one CSS layer. The five local WebP previews are counted separately
 from this code budget. See [the #10 verification record](SWITCHER-NOTES.md).
+
+## Feedback
+
+Open **Feedback** in the demo banner or footer on any page. Desktop also has a
+floating button that moves clear of page controls. Choose Feedback, Suggestion
+or Bug, enter a message and optionally add a sample name. **Save feedback**
+records the page, route, design and submission time. The latest 200 entries
+stay in this browser under `mktdemo.feedback`. If browser storage fails, the
+sheet explains that changes last for the current page session.
+
+To bring a suggestion to Joseph, choose **Also post to GitHub** after saving
+or from a staff inbox row. This opens a public issue draft for
+**JefePapi/fss-marketing-demo** in a new tab. Sign in to GitHub, review the
+prefilled details and choose **Create** there. Opening the draft shares its
+contents with GitHub. The local inbox cannot see whether an issue was created.
+Long messages may be shortened for the link. **Copy as text** keeps the full
+submission. The repository owner creates the `feedback` label. The issue link
+and the `.github/ISSUE_TEMPLATE/feedback.md` template both request that label.
+
+In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
+them read or unread, confirm deletion of one entry and download the current
+filter as CSV. The Queue badge counts unread feedback across all types.
+Managers can submit from their pages. Inbox access follows Notifications.
+**Reset demo data** clears the browser inbox. Published issues live on GitHub.
+
+The form, inbox, model and feedback CSS load on first use. About, Notifications,
+Email log and Reports also load on their own routes. `npm run size` reports
+on-demand feedback bytes separately from the initial design budget.
+[Verification and screenshots](docs/FEEDBACK-NOTES.md).
+
+### Later option
+
+Automatic forwarding needs an owner and hosting decision. A future service
+could create GitHub issues, post to a Microsoft Form or SharePoint list, or
+send email. The local-first adapter lives in `js/lazy/feedback.js`.
+`FEEDBACK_RELAY_URL = ''` disables forwarding and `BACKENDS.relay` has no
+implementation. A GitHub relay would accept this contract.
+
+```http
+POST /feedback
+Content-Type: application/json
+
+{"type":"Suggestion","message":"Sample idea","name":"","page":"Queue","route":"#/staff","theme":"a","at":"2026-11-18T12:00:00Z"}
+```
+
+The server validates and rate-limits submissions, allows only the approved
+demo origin, holds the GitHub credential server-side, creates an issue with
+the `feedback` label and returns JSON `{"issueUrl":"https://github.com/JefePapi/fss-marketing-demo/issues/123"}`.
+Enabling it requires implementing the relay adapter, setting the endpoint,
+updating the local-only disclosure and changing CSP `connect-src` from
+`'none'` to that one relay origin. Local saving must still succeed when the
+relay is unavailable.
 
 ## Limits — please read
 
@@ -119,6 +171,7 @@ robots.txt  .nojekyll  AGENTS.md  BACKLOG.md
 | What | Selector |
 |---|---|
 | Demo banner / footer | `#demo-banner`, `#site-footer` |
+| Feedback | `#feedback-open`, `[data-test="feedback-banner"]`, `[data-test="feedback-footer"]`, `#go-feedback`, `#feedback-count`, `[data-test="feedback-entry"]` |
 | Design controls | `#theme-select`, `[data-test="theme-picker"]`, `[data-test="theme-option"][data-theme]` |
 | Start the form | `#start-request` |
 | Form step container (one at a time) | `#step-1` … `#step-4` (`data-test="step-N"`), text in `#step-label` |
@@ -441,7 +494,7 @@ Calendar entries remain derived from requests; closures do not become events.
   edit application, change detection and the shared demo edit rule.
 - `js/views/activities.js`: public list/page, My activities and shared compact info.
 - `js/views/activity-edit.js`: hours, closures, specials, details, name/managers editors.
-- `js/views/notices.js`: marketing notifications and global email log.
+- `js/lazy/notices.js`: marketing notifications and global email log.
 - `tests/hours.test.mjs`: 23 pure/storage scenarios, including the plan's 22 cases.
 - `tests/hours.spec.mjs`: 27 browser scenarios in both existing projects.
 
@@ -630,5 +683,24 @@ Totals **12 PASS, 0 FAIL, 0 N/A**.
 | Search indexing | PASS | The HTML noindex directive and robots rules are intact. |
 | Demo labels and hooks | PASS | Banner, footer, route links and control selectors are preserved. Firefox exercises them through the UI. |
 | Browser storage | PASS | This change adds no persisted fields or writes. |
+
+Totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #12
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | The inbox uses the Notifications Marketing guard. Read and delete actions recheck the demo role. Managers and read-only calendar visitors can open the submission sheet. |
+| Packages | PASS | The manifests match the base commit. Verification used the installed test tooling. |
+| Dependency audit | PASS | Offline npm audit reported zero known vulnerabilities across three development dependencies. Advisory coverage is limited to the local cache. |
+| Secrets and personal data | PASS | The client has no relay credential. The issue draft discloses that posting is public, and fixtures use sample text. |
+| Outbound data | PASS | Opening and saving triggered zero GitHub requests in the browser test. The explicit issue link has a fixed destination, a new browsing context and `noopener noreferrer`. DNS prefetch is disabled. |
+| Typed text | PASS | Form input and inbox entries render through DOM text nodes. The issue builder percent-encodes values and indents submitted text in Markdown. |
+| File formats | PASS | The CSV download uses the existing formula guard and quoting. Tests check the exported bytes and original calendar formats. The issue template includes the feedback label. |
+| CSP | PASS | The CSP matches 270879e byte for byte, including the existing connection and form-action restrictions. |
+| Official imagery | PASS | The only new icon is a generic speech bubble drawn inline. |
+| Search indexing | PASS | Both HTML documents retain their noindex directives and robots.txt matches the baseline. |
+| Demo labels and hooks | PASS | Browser tests check the shell, feedback launchers, route access, focus return and existing controls on phone and desktop. |
+| Browser storage | PASS | Feedback has a separate, 200-entry cap, field limits, a disclosed memory fallback and a tested reset. |
 
 Totals **12 PASS, 0 FAIL, 0 N/A**.

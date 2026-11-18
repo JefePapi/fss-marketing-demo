@@ -9,6 +9,33 @@ import { makeId } from './model.js';
 const PREFS_KEY = 'mktdemo.prefs', DRAFT_KEY = 'mktdemo.draft';
 let state = null, memOnly = false, prefs = null, draftMem = null;
 
+const feedbackKey = 'mktdemo.feedback';
+let feedbackMemory = null;
+export async function withFeedbackLock(change) {
+  let acquired = false;
+  try {
+    if (globalThis.navigator?.locks) return await navigator.locks.request(feedbackKey, () => {
+      acquired = true;
+      return change();
+    });
+  } catch (error) {
+    if (acquired) throw error;
+    // Embedded browsers may deny Web Locks along with persistent storage.
+  }
+  return change();
+}
+export function feedbackEntries() {
+  const entries = feedbackMemory ?? readJson('localStorage', feedbackKey);
+  return Array.isArray(entries) ? entries.filter(entry => entry && typeof entry.message === 'string') : [];
+}
+export function writeFeedback(entries) {
+  const persisted = writeJson('localStorage', feedbackKey, entries);
+  feedbackMemory = persisted ? null : (entries || []);
+  globalThis.window?.dispatchEvent(new Event('feedbackchange'));
+  return persisted;
+}
+export const feedbackTemporary = () => feedbackMemory !== null;
+
 const box = name => { try { return globalThis[name] || null; } catch { return null; } };
 function readJson(storeName, key) {
   try { const s = box(storeName); if (!s) throw 0; const raw = s.getItem(key); return raw ? JSON.parse(raw) : null; }
@@ -38,7 +65,7 @@ export function init(now = new Date()) {
   setActivities(state.activities);save();
 }
 export const save = () => writeJson('localStorage', STORE_KEY, state);
-export function reset(now = new Date()) { state = fresh(now); setActivities(state.activities); save(); clearDraft(); clearFiles(); }
+export function reset(now = new Date()) { state = fresh(now); setActivities(state.activities); save(); clearDraft(); clearFiles(); writeFeedback(null); }
 export const memoryOnly = () => memOnly;
 export const requests = () => state.requests;
 export const find = id => state.requests.find(r => r.id === id);

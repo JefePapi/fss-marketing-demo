@@ -20,3 +20,15 @@ for (const {id} of THEMES) {
   console.log(id.padEnd(8), total, 'bytes (theme CSS', css, '+ theme JS', art + ')');
   if (total > budget) process.exitCode = 1;
 }
+
+const lazy = await readdir(new URL('js/lazy/', root));
+const feedback = lazy.filter(name => name.startsWith('feedback')).map(name => 'js/lazy/' + name);
+feedback.push('css/feedback.css');
+console.log('Lazy feedback assets (excluded from initial totals):');
+let feedbackTotal = 0;
+for (const file of feedback) {
+  const size = await bytes(file);
+  feedbackTotal += size;
+  console.log(file, size, 'bytes');
+}
+console.log('All feedback assets on demand:', feedbackTotal, 'bytes');

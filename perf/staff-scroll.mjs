@@ -1,4 +1,4 @@
-// node perf/staff-scroll.mjs [baseURL|offline] [label] [cpuRate=4] [theme=a] [chromium|firefox] [staff|design]
+// node perf/staff-scroll.mjs [baseURL|offline] [label] [cpuRate=4] [theme=a] [chromium|firefox] [staff|design|feedback]
 // design covers the five required pages at 1920. staff adds both resolutions and manager routes.
 // Firefox runs at native speed. Only Chromium exposes CDP CPU throttling.
 import { chromium, firefox } from 'playwright';
@@ -11,13 +11,14 @@ if (!['a','a-light','b','c','current'].includes(theme) || !['chromium','firefox'
 const offline = address === 'offline';
 const base = new URL(offline ? 'http://demo.test/' : address);
 base.searchParams.set('theme', theme);
-const sizes = suite === 'design' ? [[1920,1080]] : [[1920,1080],[2560,1440]];
+const sizes = suite !== 'staff' ? [[1920,1080]] : [[1920,1080],[2560,1440]];
 const designPages = [
   ['visitor','home','#/'], ['visitor','request','#/request'],
   ['marketing','queue','#/staff?show=all'], ['visitor','activities','#/activities'],
   ['marketing','activity+areas','#/activities/bowling'],
 ];
-const pages = suite === 'design' ? designPages : [...designPages,
+const feedbackPages = designPages.filter(([, name]) => ['home', 'queue', 'activities'].includes(name));
+const pages = suite === 'feedback' ? feedbackPages : suite === 'design' ? designPages : [...designPages,
   ['marketing','notifications','#/staff/notifications'], ['marketing','staff-request','#/staff/FIRST'],
   ['mgrA','my-activities','#/manager'], ['mgrA','activity+areas','#/activities/bowling'],
   ['mgrB','activity+areas','#/activities/club'], ['mgrB','my-activities','#/manager'],

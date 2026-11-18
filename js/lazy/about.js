@@ -16,7 +16,7 @@ export function aboutView(ctx) {
         li(`The lead-time note uses a sample rule: ${LEAD_DAYS} calendar days before the event. The agency sets the real rule.`),
         li('Managers, hours and notifications are made up. The role switch is not a login.'),
         li('Section codes are for illustration only.'),
-        li('No email is sent. Nothing you type leaves this browser.'))),
+        li('Feedback stays here unless you choose to open a public GitHub issue draft.'))),
     h('div', { class: 'surface stack' },
       h('h2', null, 'Where the data lives'),
       h('ul', null,

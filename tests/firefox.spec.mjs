@@ -71,14 +71,14 @@ for (const theme of ['current', 'a', 'a-light', 'b', 'c']) {
   test(`Queue toolbar, filters and chips fit in ${theme}`, async ({ page }) => {
     await page.goto('./?theme=' + theme + '#/staff');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.locator('.queue-tools a')).toHaveText(['Email log', 'Notifications', 'Reports']);
+    await expect(page.locator('.queue-tools a')).toHaveText(['Email log', 'Notifications', 'Reports', /^Feedback\d+$/]);
     await expect(page.locator('#export-requests')).toBeVisible();
     for (const width of [1024, 1280, 900, 1920, 390]) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
       const layout = await page.evaluate(() => {
         const rect = el => el.getBoundingClientRect();
         const toolbar = document.querySelector('.queue-tools');
-        const tools = ['go-emails', 'go-notices', 'go-reports', 'export-requests'].map(id => rect(document.getElementById(id)));
+        const tools = ['go-emails', 'go-notices', 'go-reports', 'go-feedback', 'export-requests'].map(id => rect(document.getElementById(id)));
         const parent = rect(toolbar);
         const csv = tools.at(-1);
         const fields = ['queue-status', 'queue-priority', 'queue-search'].map(id => rect(document.getElementById(id)));
