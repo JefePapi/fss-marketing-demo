@@ -1,9 +1,9 @@
 // One JSON blob in localStorage. If storage is blocked (private mode, a Teams frame),
 // everything still works from memory for this page view.
 import { clearFiles } from './files.js';
-import { VERSION, STORE_KEY, STAFF, MANAGERS, setActivities } from './config.js';
-import { buildSeeds, buildActivities, FIRST_SEED } from './seed.js';
-import { normalize, validatePart, applyEdit, canEdit } from './hours.js';
+import { VERSION, STORE_KEY, STAFF, MANAGERS, setActivities, eventArea } from './config.js';
+import { buildSeeds, buildActivities, FIRST_SEED, slugify } from './seed.js';
+import { normalize, validatePart, applyEdit, canEdit, areaInfo } from './hours.js';
 import { makeId } from './model.js';
 
 const PREFS_KEY = 'mktdemo.prefs', DRAFT_KEY = 'mktdemo.draft';
@@ -21,8 +21,9 @@ function writeJson(storeName, key, value) {
 
 export function upgrade(saved, now = new Date()) {
   const n=structuredClone(saved);
-  if(!Array.isArray(n.activities)) {n.activities=buildActivities(now).map(a=>({...a,history:[]}));n.notices=[];n.mail=[];n.seq=1;}
-  n.activities=n.activities.map(normalize);n.notices=(n.notices || []).slice(-100);n.mail=(n.mail || []).slice(-100);n.seq=Number.isInteger(n.seq)?n.seq:1;
+  const seeds=buildActivities(now);
+  if(!Array.isArray(n.activities)) {n.activities=seeds.map(a=>({...a,history:[]}));n.notices=[];n.mail=[];n.seq=1;}
+  n.activities=n.activities.map(a=>normalize({...a,areas:Array.isArray(a.areas)?a.areas:seeds.find(s=>s.id===a.id)?.areas || []}));n.notices=(n.notices || []).slice(-100);n.mail=(n.mail || []).slice(-100);n.seq=Number.isInteger(n.seq)?n.seq:1;
   return n;
 }
 const fresh = now => {
@@ -43,7 +44,11 @@ export const requests = () => state.requests;
 export const find = id => state.requests.find(r => r.id === id);
 export const exampleId = () => state.requests[0].id;
 export const peekId = (now = new Date()) => makeId(state.counter, now);
-export function add(req, now = new Date()) { req.id = makeId(state.counter++, now); state.requests.push(req); save(); return req; }
+export function add(req, now = new Date()) {
+  const area=eventArea(req.event);
+  req.event.areaId=area?.id || '';
+  req.event.areaName=area?.name || '';
+  req.id = makeId(state.counter++, now); state.requests.push(req); save(); return req; }
 
 // Small display preferences (staff view on/off, acting as, motion paused).
 export function pref(key, value) {
@@ -65,7 +70,31 @@ export function readNotice(id) {state.notices.forEach(n=>{if(!id || n.id===id)n.
 export function saveActivity(id, part, draft, actor, now = new Date()) {
   const a=activity(id), role=pref('role') || 'marketing', manager=MANAGERS.find(m=>m.id===role);
   const ctx={staff:!!pref('staff') && !manager,staffSide:!!pref('staff'),manager};
-  if(!['hours','closures','specials','details','admin'].includes(part) || !canEdit(ctx,a,part) || (!a && (id!=='new' || part!=='admin')))return {blocked:true};
+  if(!['hours','closures','specials','details','admin','areas'].includes(part) || !canEdit(ctx,a,part) || (!a && (id!=='new' || part!=='admin')))return {blocked:true};
+  let edit = draft;
+  if(part==='areas') {
+    const {areaId,name='',remove}=draft, existing=a.areas.find(x=>x.id===areaId);
+    const info=draft.info || existing?.info || areaInfo(a.info,true);
+    if(areaId && !existing || remove && !existing)return {blocked:true};
+    const label=String(name).trim();
+    if(!remove) {
+      const error=!label || label.length>60 ? 'Enter an area name with 1 to 60 characters.'
+        : a.areas.some(x=>x!==existing && x.name.toLowerCase()===label.toLowerCase()) ? 'That area name is already used.'
+        : !existing && a.areas.length>=30 ? 'An activity can have up to 30 areas.' : '';
+      if(error)return {errors:{'area-name':error}};
+      const errors={...validatePart('hours',info),...validatePart('closures',info)};
+      if(Object.keys(errors).length)return {errors};
+    }
+    let areaKey=existing?.id;
+    if(!areaKey) {
+      const base=slugify(label) || 'area';
+      const used=new Set([...a.areas.map(x=>x.id),...state.requests.filter(r=>r.event.facilityId===id).map(r=>r.event.areaId)]);
+      areaKey=base;
+      for(let k=2;areaKey==='new' || used.has(areaKey);k++)areaKey=base+'-'+k;
+    }
+    const area={id:areaKey,name:label,info};
+    edit={areaId:areaKey,areas:existing?a.areas.flatMap(x=>x!==existing?[x]:remove?[]:[area]):[...a.areas,area]};
+  }
   const errors=validatePart(part,{...draft,id:a?.id || ''},state.activities);
   if(Object.keys(errors).length)return {errors};
   const actual={name:manager?manager.name:actor.name,role:manager?'manager':'marketing'};
@@ -77,7 +106,7 @@ export function saveActivity(id, part, draft, actor, now = new Date()) {
     const entry={at:now.toISOString(),by:actual.name,role:'marketing',hours:false,changes:['Activity added']};
     target.updated={at:entry.at,by:actual.name};target.history=[entry];state.activities.push(target);
   } else {
-    const result=applyEdit(target,part,draft,actual,now.toISOString(),STAFF.map(s=>s.id));
+    const result=applyEdit(target,part,edit,actual,now.toISOString(),STAFF.map(s=>s.id));
     if(!result)return {unchanged:true};
     if(result.notice) {result.notice.id='n'+state.seq++;state.notices.push(result.notice);state.mail.push(result.mail);}
   }

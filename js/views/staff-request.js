@@ -1,8 +1,8 @@
 // Staff view of one request: shared facts once, one lane per service, calendar card, thread, history.
-import { activityBrief } from './activities.js';
+import { activityBrief, eventActivity } from './activities.js';
 import { hoursChangedSince } from '../hours.js';
 import { h, page, field, input, textarea, select, pill, facts } from '../ui.js';
-import { TEAMS, SERVICES, svc, STAFF, staffName, JOB_STATUS, OVERALL, CAL_STATUS, EVENT_TYPES, AF_CONNECT, facility } from '../config.js';
+import { TEAMS, SERVICES, svc, STAFF, staffName, JOB_STATUS, OVERALL, CAL_STATUS, EVENT_TYPES, AF_CONNECT, facility, eventFacilityName, eventAreaName } from '../config.js';
 import { overallStatus, heskTicketCount, teamsOf, dateText, militaryTimeText as timeText, fmtDate, fmtStamp, detailLines, newJob, ymd } from '../model.js';
 import * as store from '../store.js';
 import { notFound } from './home.js';
@@ -33,6 +33,10 @@ export function staffRequest(ctx) {
     for(const k of ['name','email','phone']) if((req.requester[k] || '') !== ui.contact[k]) {log('Requester '+k+' changed from '+(req.requester[k] || 'blank')+' to '+ui.contact[k]);req.requester[k]=ui.contact[k];}
     if((req.cc || []).join(', ') !== ui.contact.cc) {log('Requester Cc changed');req.cc=ccList(ui.contact.cc);}
     const next = req.kind === 'other' ? {...e,title:ui.draft.title,description:ui.draft.description} : eventFromDraft(ui.draft);
+    if(e.areaId && ui.draft.areaId===e.areaId && next.facilityId===e.facilityId && !next.areaId) {
+      next.areaId=e.areaId;next.areaName=e.areaName;
+    }
+    if(eventAreaName(next)!==eventAreaName(e))log('Area changed from '+(eventAreaName(e) || 'Whole activity')+' to '+(eventAreaName(next) || 'Whole activity'));
     next.actualAttendance = e.actualAttendance;
     if (next.facilityId === e.facilityId) next.section = e.section; // keep a hand-edited section code
     for (const k of Object.keys(FIELD_NAMES)) if (next[k] !== e[k]) log(`${FIELD_NAMES[k]} changed from ${show(k, e[k])} to ${show(k, next[k])}`);
@@ -52,7 +56,7 @@ export function staffRequest(ctx) {
       h('div', { class: 'row between' }, h('h2', null, 'Facts'),
         h('button', { class: 'btn', type: 'button', id: 'facts-edit', 'data-test': 'facts-edit', onclick: () => { ui.editing = true; ui.draft = draftFromEvent(e); ui.contact={...req.requester,phone:req.requester.phone || '',cc:(req.cc || []).join(', ')}; ui.errs = {}; ctx.refresh(); } }, 'Edit facts')),
       facts([
-        ['Facility', req.kind === 'other' ? '' : `${facility(e.facilityId).name} (${e.section})` ], ['Day', req.kind === 'other' ? 'No event' : dateText(e)], ['Time', req.kind === 'other' ? '' : timeText(e)], ['Where', e.where],
+        ['Facility', req.kind === 'other' ? '' : `${eventFacilityName(e)} (${e.section})` ], ['Day', req.kind === 'other' ? 'No event' : dateText(e)], ['Time', req.kind === 'other' ? '' : timeText(e)], ['Where', e.where],
         ['What', e.description], ['Cost', e.cost], ['Expected', e.estAttendance], ['Joint event', e.joint ? 'Yes' : 'No'],
         ['Sign-up needed', e.signup ? 'Yes' : 'No'], ['On AF Connect', AF_CONNECT[e.afConnect]],
         ['Requester', `${req.requester.name} — ${req.requester.email}${req.requester.phone ? ' — ' + req.requester.phone : ''}`],
@@ -177,7 +181,7 @@ export function staffRequest(ctx) {
       h('button',{id:'print-request',class:'btn',type:'button',onclick:()=>window.print()},'Print request'),
       input('requester-link','text',new URL('#/status/'+req.id,location.href).href,null,{readonly:true}),
       h('button',{id:'copy-requester-link',class:'btn',type:'button',onclick:()=>copyText(document.getElementById('requester-link').value)},'Copy requester link')),
-    factsCard, req.kind!=='other' && h('section',{id:'activity-card',class:'surface stack'},h('h2',null,facility(e.facilityId).name),activityBrief(facility(e.facilityId),{event:e,today,staff:true}), (e.endDate || e.date)>=today && hoursChangedSince(facility(e.facilityId),req.submittedAt) && h('a',{href:'#/activities/'+e.facilityId},h('span',{'data-test':'hours-changed'},'Hours changed since this was sent'))), attachments(req.files),
+    factsCard, req.kind!=='other' && h('section',{id:'activity-card',class:'surface stack'},h('h2',null,eventFacilityName(e)),activityBrief(eventActivity(e),{event:e,today,staff:true}), (e.endDate || e.date)>=today && hoursChangedSince(facility(e.facilityId),req.submittedAt,e.areaId) && h('a',{href:'#/activities/'+e.facilityId},h('span',{'data-test':'hours-changed'},'Hours changed since this was sent'))), attachments(req.files),
     h('section', { class: 'surface stack', id: 'lanes' },
       h('h2', null, req.jobs.length ? `Lanes (${req.jobs.length})` : 'Calendar only: no lanes'),
       h('div', { class: 'lanes' }, req.jobs.map(lane)), addPart),

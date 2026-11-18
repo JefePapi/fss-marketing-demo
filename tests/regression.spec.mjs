@@ -40,3 +40,29 @@ test('Atmosphere is static and big panels avoid backdrop blur', async ({ page })
   await page.locator('#pause-motion').click();
   await expect(page.locator('#pause-motion')).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('Staff scrolling pauses hover lifts without blocking clicks', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'Desktop hover only');
+  await page.goto('./#/staff?show=all');
+  const root = page.locator('html');
+  const app = page.locator('#app');
+  await page.mouse.move(640, 700);
+  await page.mouse.wheel(0, 500);
+  await expect.poll(() => app.evaluate(el => ({
+    scrolling: document.documentElement.classList.contains('scrolling'),
+    pointerEvents: getComputedStyle(el).pointerEvents,
+  })), { intervals: [25] }).toEqual({ scrolling: true, pointerEvents: 'auto' });
+  await expect(root).not.toHaveClass(/\bscrolling\b/, { timeout: 1000 });
+  const card = page.locator('.qcard').first();
+  await card.scrollIntoViewIfNeeded();
+  await expect(root).not.toHaveClass(/\bscrolling\b/, { timeout: 1000 });
+  await page.mouse.move(0, 0);
+  const shadow = await card.evaluate(el => getComputedStyle(el).boxShadow);
+  await card.hover();
+  await expect(card).not.toHaveCSS('transform', 'none');
+  await expect(card).toHaveCSS('box-shadow', shadow);
+  await root.evaluate(el => el.classList.add('scrolling'));
+  await expect(card).toHaveCSS('transform', 'none');
+  await expect.poll(() => card.evaluate(el => el.matches(':hover'))).toBe(true);
+  await expect(card).toHaveCSS('box-shadow', shadow);
+});

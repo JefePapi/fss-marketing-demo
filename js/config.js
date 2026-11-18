@@ -45,6 +45,9 @@ export const MANAGERS = [
   {id:'mgrD',name:'Dev Shah',label:'Manager D'},
 ];
 export const facility = id => live.find(f => f.id === id) || { id, name: 'Unknown facility', section: '' };
+export const eventArea = e => facility(e.facilityId).areas?.find(a=>a.id===e.areaId);
+export const eventAreaName = e => eventArea(e)?.name || e.areaName || '';
+export const eventFacilityName = e => [facility(e.facilityId).name,eventAreaName(e)].filter(Boolean).join(' — ');
 
 // Fake staff.
 export const STAFF = [

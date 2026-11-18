@@ -96,6 +96,40 @@ Final JS+CSS: **187,540 bytes** (`wc -c js/*.js js/views/*.js css/app.css`),
 below both the plan 195,000-byte hard stop and owner 200,000-byte limit. No branch, commit, push, merge or
 deployment; edits remain on main 33c7775 in the working tree as requested.
 
+## 6. Staff desktop wheel scrolling — IMPLEMENTED, browser/FPS validation pending
+
+Premise: card and button lifts activate during wheel scrolling. No staff view
+has a scroll or resize listener. Live measurements supplied by the owner.
+
+Follow-up: preserve clicks and taps during scrolling, suppress only hover lifts,
+and update the browser regression.
+
+**Close-out:** The passive listener sets the scroll class until 150 ms after
+the last scroll event. On hover-capable devices the class pauses transform-only
+hover lifts and keeps buttons and cards clickable. The updated desktop regression
+checks the class, pointer events, hover transforms and stable shadows. All eight
+unit files and JS syntax checks pass. Playwright could not start its local server.
+See README.md for the security and validation record.
+
+## 7. Areas inside each activity — IMPLEMENTED, browser validation pending
+
+Premise: activities have hours and edit history, but no areas or request area
+selection. Reuse the version-1 store, hours editor and role checks.
+
+**Close-out:** Added seeded version-1 areas, shared hours editing with demo
+role checks and audit history, optional request selection with warn-and-send,
+and area names in request details and existing export location fields.
+Eight unit files pass, compared with seven before the changes, with zero
+failures. All 23 site JS files pass syntax checks. Playwright discovers 224
+cases, including one desktop-only test skipped by the phone project, but
+server socket creation is blocked. JS + CSS is **196,467 bytes**. Security
+checklist in README.md: 12 PASS, 0 FAIL, 0 N/A. Working tree only.
+
+**Draft follow-up:** Restored route-based activity draft cleanup and included
+the Areas add and edit routes. The shared editor already initializes a fresh
+draft when the activity, section or area changes. That key makes a blanket
+reset on path changes unnecessary for Areas. Sheets still close on path changes.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

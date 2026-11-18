@@ -1,6 +1,6 @@
 // Requester's view: look up a number, see each team's status, send a message.
 import { h, page, field, input, textarea, pill, facts } from '../ui.js';
-import { TEAMS, svc, JOB_STATUS_REQ, OVERALL_REQ, facility, CAL_STATUS } from '../config.js';
+import { TEAMS, svc, JOB_STATUS_REQ, OVERALL_REQ, eventFacilityName, CAL_STATUS } from '../config.js';
 import { overallStatus, teamsOf, dateText, timeText, fmtStamp } from '../model.js';
 import * as store from '../store.js';
 import { notFound } from './home.js';
@@ -52,7 +52,7 @@ export function statusView(ctx) {
       }),
       h('p', { class: 'sub' }, 'Answer in the message box below.')),
     h('div', { class: 'surface' }, facts([
-      ['Day', req.kind === 'other' ? 'No event' : dateText(e)], ['Time', req.kind === 'other' ? '' : timeText(e)], ['Where', e.where], ['Facility', req.kind === 'other' ? '' : facility(e.facilityId).name], ['Cost', e.cost],
+      ['Day', req.kind === 'other' ? 'No event' : dateText(e)], ['Time', req.kind === 'other' ? '' : timeText(e)], ['Where', e.where], ['Facility', req.kind === 'other' ? '' : eventFacilityName(e)], ['Cost', e.cost],
       ['Contact', `${req.requester.name} — ${req.requester.email}`], ['Calendar', req.kind === 'other' ? '' : CAL_STATUS[req.calendar.status]], ['Cc',(req.cc || []).join(', ')],
     ])),
     h('section',{class:'surface',id:'status-details'},h('h2',null,'What you sent'),h('p',null,e.description),attachments(req.files)),

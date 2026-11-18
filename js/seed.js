@@ -149,6 +149,19 @@ export function upcomingHoliday(now, key) {
   if (ymd(d) < ymd(now)) d = date(now.getFullYear()+1);
   return ymd(d);
 }
+const areaSeeds = {
+  bowling: [["Lanes","09:00","22:00"],["Papa Joe's","11:00","21:00"],["Taco Bell","10:30","20:00",[0]],["Slots","11:00","23:00"],["Pro Shop","10:00","18:00",[0,1]]],
+  club: [['Dining Room','11:00','21:00'],['Bar','16:00','23:00'],['Snack Bar','10:00','16:00'],['Slots','11:00','23:00'],['Bingo','17:00','21:00',[0,1]],['Pizza Hut','11:00','20:00']],
+  fitness: [['Fitness Floor','05:00','22:00'],['Varsity Sports','09:00','18:00',[0]]],
+  outdoor: [['Outdoor Programs','09:00','16:00'],['Equipment Rental','08:00','17:00'],['Equipment Loan','09:00','15:00'],['Paintball','10:00','18:00',[1,2]]],
+  itt: [['Tours','08:00','17:00'],['Leisure Travel','09:00','17:00',[0]]],
+  community: [['Community Center','08:00','20:00'],['Resale Counter','10:00','16:00'],['Lounge','12:00','20:00']],
+  arts: [['Arts and Crafts Center','09:00','18:00'],['Engraving Shop','10:00','16:00',[0]],['Frame Shop','10:00','17:00',[0]],['Resale Counter','11:00','16:00']],
+  auto: [['Auto Hobby Shop','09:00','17:00',[0,1]],['Car Wash','07:00','20:00'],['Parts Resale','10:00','16:00',[0,1]]],
+  youth: [['Youth Center','13:00','19:00'],['Before and After School','06:00','18:00',[0,6]],['Youth Sports','15:00','19:00'],['Teen Programs','14:00','20:00']],
+  library: [['Library','09:00','18:00']], pet: [['Pet Kennels','07:00','18:00']], lodging: [['Front Desk','00:00','23:59']],
+};
+export const slugify = name => name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 export function buildActivities(now = new Date()) {
   const assignments = {fitness:['mgrA'],bowling:['mgrA'],outdoor:['mgrA'],community:['mgrA'],club:['mgrB','mgrC'],library:['mgrB'],arts:['mgrB'],auto:['mgrC'],itt:['mgrC'],youth:['mgrC'],lodging:['mgrD'],pet:['mgrD']};
   const range = (o,c) => [[o,c]], normal=range('09:00','18:00');
@@ -166,6 +179,10 @@ export function buildActivities(now = new Date()) {
     const stamp=n=>{const d=parseYmd(addDays(ymd(now),-n));d.setHours(9);return d.toISOString();};
     const specials=['bowling','club','outdoor'].includes(f.id)?[{id:'p1',title:(f.id==='bowling'?'Family bowling special':'Seasonal special')+' (sample)',from:ymd(new Date(now.getFullYear(),now.getMonth()+1,1)),to:ymd(new Date(now.getFullYear(),now.getMonth()+2,0)),text:'Sample offer only.'}]:[];
     const history=f.id==='bowling'?[{at:stamp(2),by,role:'manager',hours:true,changes:['Sat: 10:00–22:00 → 10:00–20:00']}]:[];
-    return {...f,archived:false,managers:assignments[f.id],info:{location:'Building 000 (sample)',description:'Sample activity information.',phone:'DSN 000-0000 (sample)',email:f.id+'@example.com',notes:'Sample notes for marketing.',week,closures:closures.sort((a,b)=>a.date.localeCompare(b.date)),specials},updated:{at:history[0]?.at || stamp(3+i*2),by},history};
+    const areas = areaSeeds[f.id].map(([name,open,close,off=[]])=>({
+      id:slugify(name),name,info:{week:Array.from({length:7},(_,i)=>off.includes(i)?[]:range(open,close)),
+        closures:structuredClone(closures.filter(c=>c.closed)),phone:'',notes:''},
+    }));
+    return {...f,areas,archived:false,managers:assignments[f.id],info:{location:'Building 000 (sample)',description:'Sample activity information.',phone:'DSN 000-0000 (sample)',email:f.id+'@example.com',notes:'Sample notes for marketing.',week,closures:closures.sort((a,b)=>a.date.localeCompare(b.date)),specials},updated:{at:history[0]?.at || stamp(3+i*2),by},history};
   });
 }

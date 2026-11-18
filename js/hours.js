@@ -8,15 +8,24 @@ const day = s => { const d = parseYmd(s); return `${d.getDate()} ${MONTHS[d.getM
 export const rangesText = r => r?.length ? r.map(x => x.join('–')).join(', ') : 'Closed';
 export const closureText = c => `${day(c.date)}${c.to && c.to !== c.date ? '–'+day(c.to) : ''}: ${c.label}${c.closed ? '' : ', '+rangesText(c.ranges)}`;
 export const specialText = s => `${s.title} (${day(s.from)}–${day(s.to || s.from)})${s.text ? ': '+s.text : ''}`;
+function normalizeHours(info) {
+  const ranges = r => (r || []).map(x=>x.map(trim)).sort((a,b)=>a[0].localeCompare(b[0]));
+  return {
+    week:Array.from({length:7},(_,i)=>ranges(info.week?.[i])),
+    closures:(info.closures || []).map(c=>({...c,to:c.to || '',label:trim(c.label),ranges:c.closed ? [] : ranges(c.ranges)})).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id)),
+  };
+}
+export const areaInfo = (info, blank=false) => ({
+  ...normalizeHours(info),phone:blank?'':trim(info.phone),notes:blank?'':trim(info.notes),
+});
 export function normalize(a = {}) {
   const n = { id:'', name:'', section:'', archived:false, managers:[], updated:{at:'',by:''}, history:[], ...copy(a) };
   n.info = {location:'',description:'',phone:'',email:'',notes:'',week:Array.from({length:7},()=>[]),closures:[],specials:[],...n.info};
   for (const k of ['name','section']) n[k] = trim(n[k]);
   for (const k of ['location','description','phone','email','notes']) n.info[k] = trim(n.info[k]);
   n.managers = [...new Set(n.managers)].sort();
-  const ranges = r => (r || []).map(x=>x.map(trim)).sort((a,b)=>a[0].localeCompare(b[0]));
-  n.info.week = Array.from({length:7},(_,i)=>ranges(n.info.week[i]));
-  n.info.closures = n.info.closures.map(c=>({...c,to:c.to || '',label:trim(c.label),ranges:c.closed ? [] : ranges(c.ranges)})).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  Object.assign(n.info,normalizeHours(n.info));
+  n.areas=(n.areas || []).map(a=>({id:a.id,name:trim(a.name),info:areaInfo(a.info)}));
   n.info.specials = n.info.specials.map(s=>({...s,title:trim(s.title),text:trim(s.text),to:s.to || s.from})).sort((a,b)=>a.from.localeCompare(b.from)||a.id.localeCompare(b.id));
   n.history = n.history.slice(-50);
   return n;
@@ -90,13 +99,28 @@ export function diffActivity(before, after) {
 export const canEdit = (ctx,a,part) => !!ctx.staff || !!(ctx.staffSide && ctx.manager && a?.managers.includes(ctx.manager.id) && part!=='admin');
 export function applyEdit(activity, part, draft, actor, atIso, staffIds) {
   const next=normalize(activity), info=draft.info || draft;
-  if(part==='admin')for(const k of ['name','section','managers','archived'])next[k]=copy(draft[k]);
+  if(part==='areas')next.areas=draft.areas;
+  else if(part==='admin')for(const k of ['name','section','managers','archived'])next[k]=copy(draft[k]);
   else for(const k of part==='hours'?['week']:part==='details'?['location','description','phone','email','notes']:[part])next.info[k]=copy(info[k]);
-  const clean=normalize(next), {lines,hours}=diffActivity(activity,clean);
+  const clean=normalize(next), diff=diffActivity(activity,clean), {lines}=diff;
+  let hours=diff.hours;
+  if(part==='areas') {
+    for(const old of activity.areas)if(!clean.areas.some(a=>a.id===old.id)){lines.push('Area removed: '+old.name);hours=true;}
+    for(const area of clean.areas) {
+      const old=activity.areas.find(a=>a.id===area.id);
+      if(!old)lines.push('Area added: '+area.name);
+      else {
+        if(old.name!==area.name)lines.push(`Area renamed: ${old.name} → ${area.name}`);
+        const change=diffActivity(old,area);
+        hours=hours || change.hours;
+        lines.push(...change.lines.filter(line=>!line.startsWith('Name: ')).map(line=>area.name+' · '+line));
+      }
+    }
+  }
   if(!lines.length)return null;
-  const entry={at:atIso,by:actor.name,role:actor.role,hours,changes:lines};
+  const entry={at:atIso,by:actor.name,role:actor.role,hours,changes:lines,...(part==='areas'?{areaId:draft.areaId}:{})};
   clean.updated={at:atIso,by:actor.name};clean.history=[...clean.history,entry].slice(-50);Object.assign(activity,clean);
   const base={at:atIso,activityId:activity.id,by:actor.name,changes:lines};
   return {entry,notice:actor.role==='manager'?{...base,activityName:activity.name,read:false}:null,mail:actor.role==='manager'?{at:atIso,trigger:'activity-updated',activityId:activity.id,to:staffIds.map(id=>id+'@example.com'),cc:[],subject:`${activity.name}: updated by ${actor.name} — would email marketing`,lines}:null};
 }
-export const hoursChangedSince = (a,iso) => !!a?.history.some(e=>e.hours && e.at>iso);
+export const hoursChangedSince = (a,iso,areaId='') => !!a?.history.some(e=>e.hours && e.at>iso && (e.areaId || '')===areaId);

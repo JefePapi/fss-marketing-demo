@@ -1,10 +1,10 @@
 // The one request form: four short steps.
 import { h, field, input, textarea, select, chips, facts, page } from '../ui.js';
-import { activities, facility, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CONNECT, OLD_FORMS } from '../config.js';
+import { activities, facility, eventArea, eventFacilityName, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CONNECT, OLD_FORMS } from '../config.js';
 import { leadTime, ymd, fmtDM, fmtDate, dateText, timeText, newJob, diffDays, isYmd } from '../model.js';
 import * as store from '../store.js';
 
-import { requestActivityInfo, hoursCheck } from './activities.js';
+import { requestActivityInfo, hoursCheck, eventActivity } from './activities.js';
 import { filePicker, filesPending } from '../files.js';
 import { ccList, ccError, received, defaultFlash } from '../actions.js';
 import { staffName } from '../config.js';
@@ -14,7 +14,7 @@ export const botTrap = (value, change) => h('div', { class: 'bot-trap', 'aria-hi
 const STEPS = ['About you', 'About the event', 'What do you need from Marketing?', 'Check and send'];
 const blank = () => ({
   step: 1, name: '', email: '', phone: '', cc: '', remember: false, bystaff: false, website: '', files: [],
-  facilityId: '', title: '', description: '', date: '', multi: false, endDate: '', allDay: false, start: '', end: '',
+  facilityId: '', areaId: '', title: '', description: '', date: '', multi: false, endDate: '', allDay: false, start: '', end: '',
   where: '', cost: '', est: '', joint: '', signup: '', afConnect: '',
   services: [], calOnly: false, sizes: [], qty: {}, inHand: '', kinds: [], breakEven: '', cash: '', items: '', page: '',
 });
@@ -37,10 +37,20 @@ export function eventFields(d, o) {
   // Boxes that show or hide other boxes do it in place, so the ticked box itself is never replaced.
   const set = (k, show) => e => {
     d[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-    o.changed(); if (show) show(); if(['facilityId','endDate','start','end','multi','allDay'].includes(k))drawInfo();
+    if(k==='facilityId') {d.areaId='';d.areaName='';drawAreas();}
+    o.changed(); if (show) show(); if(['areaId','facilityId','endDate','start','end','multi','allDay'].includes(k))drawInfo();
   };
+  const areas=h('div');
+  function drawAreas() {
+    const choices=(facility(d.facilityId).areas || []).map(a=>[a.id,a.name]);
+    if(!o.info && d.areaId && !eventArea(d))choices.push([d.areaId,d.areaName || 'Removed area']);
+    areas.replaceChildren(...(choices.length?[field('f-areaId','Which area? (optional)',
+      select('f-areaId',[['','Whole activity'],...choices],d.areaId || '',set('areaId')))]:[]));
+    areas.hidden=!choices.length;
+  }
+  drawAreas();
   const info=h('div',{id:'activity-info-wrap','aria-live':'polite'});
-  const drawInfo=()=>{if(o.info)info.replaceChildren(...requestActivityInfo(facility(d.facilityId),{...d,endDate:d.multi?d.endDate:''},o.today));};
+  const drawInfo=()=>{if(o.info)info.replaceChildren(...requestActivityInfo(eventActivity(d),{...d,endDate:d.multi?d.endDate:''},o.today));};
   drawInfo();
   const e0 = o.errs;
   const endField = field('f-endDate', 'Ends on', input('f-endDate', 'date', d.endDate, set('endDate')), e0.endDate);
@@ -55,7 +65,7 @@ export function eventFields(d, o) {
   const e = o.errs;
   return [
     field('f-facilityId', 'Which facility or activity?', select('f-facilityId',[['', 'Choose one'], ...activities().filter(f=>!f.archived || f.id===d.facilityId).map(f => [f.id, f.name+(f.archived?' (archived)':'')])], d.facilityId, set('facilityId')), e.facilityId),
-    o.info && info,
+    areas, o.info && info,
     field('f-title', 'What is it called?', input('f-title', 'text', d.title, set('title'), { maxlength: 80, autocomplete: 'off' }), e.title),
     field('f-description', 'What is happening?', textarea('f-description', d.description, set('description'), { maxlength: 600 }), e.description, 'A few sentences is plenty.'),
     field('f-date', 'What day is it?', input('f-date', 'date', d.date, ev => { d.date = ev.target.value; o.changed(); drawNote(); drawInfo(); }), e.date),
@@ -96,14 +106,14 @@ export function validateEvent(d, today, allowPast) {
 }
 
 export const eventFromDraft = d => ({
-  facilityId: d.facilityId, section: facility(d.facilityId).section, title: d.title.trim(), description: d.description.trim(),
+  facilityId: d.facilityId, areaId: eventArea(d)?.id || '', areaName: eventArea(d)?.name || '', section: facility(d.facilityId).section, title: d.title.trim(), description: d.description.trim(),
   date: d.date, endDate: d.multi && d.endDate > d.date ? d.endDate : '', allDay: !!d.allDay,
   start: d.allDay ? '' : d.start, end: d.allDay ? '' : d.end, where: d.where.trim(), cost: d.cost.trim(),
   estAttendance: d.est === '' ? null : Number(d.est), actualAttendance: null,
   joint: d.joint === 'yes', signup: d.signup === 'yes', afConnect: d.afConnect,
 });
 export const draftFromEvent = e => ({
-  facilityId: e.facilityId, title: e.title, description: e.description, date: e.date, multi: !!e.endDate, endDate: e.endDate || '',
+  facilityId: e.facilityId, areaId: e.areaId || '', areaName: e.areaName || '', title: e.title, description: e.description, date: e.date, multi: !!e.endDate, endDate: e.endDate || '',
   allDay: !!e.allDay, start: e.start || '', end: e.end || '', where: e.where, cost: e.cost,
   est: e.estAttendance == null ? '' : String(e.estAttendance), joint: e.joint ? 'yes' : 'no', signup: e.signup ? 'yes' : 'no', afConnect: e.afConnect,
 });
@@ -183,7 +193,7 @@ export function requestView(ctx) {
       h('button', {
         class: 'btn', type: 'button', id: 'fill-sample', 'data-test': 'fill-sample', onclick: () => {
           Object.assign(d, {
-            name: 'Jordan Hale', email: 'jordan.hale@example.com', phone: '', facilityId: 'fitness', title: 'Fall Fest 5K',
+            name: 'Jordan Hale', email: 'jordan.hale@example.com', phone: '', facilityId: 'fitness', areaId: '', title: 'Fall Fest 5K',
             description: 'A sample community 5K fun run.', date: ymd(new Date(ctx.now.getFullYear(), ctx.now.getMonth() + 4, 20)),
             multi: false, endDate: '', allDay: false, start: '08:00', end: '11:00', where: 'Fitness Center track', cost: 'Free',
             est: '250', joint: 'no', signup: 'yes', afConnect: 'notyet',
@@ -225,7 +235,7 @@ export function requestView(ctx) {
     };
     const sync = () => { errs = {}; save(); draw(); };
     body = [
-      h('p', { class: 'capsule', id: 'reminder' }, `${d.title} — ${facility(d.facilityId).name}`),
+      h('p', { class: 'capsule', id: 'reminder' }, `${d.title} — ${eventFacilityName(d)}`),
       h('fieldset', { class: 'choices' + (errs.services ? ' bad' : ''), id: 'f-services' }, h('legend', null, 'Tap any that you need'),
         SERVICES.map(s => {
           const on = d.services.includes(s.id);
@@ -253,7 +263,7 @@ export function requestView(ctx) {
     body = [
       card(1, 'You', facts([['Name', d.name], ['Email', d.email], ['Phone', d.phone]])),
       card(2, 'Event', facts([
-        ['Called', ev.title], ['Facility', facility(ev.facilityId).name], ['What', ev.description], ['Day', dateText(ev)], ['Time', timeText(ev)],
+        ['Called', ev.title], ['Facility', eventFacilityName(ev)], ['What', ev.description], ['Day', dateText(ev)], ['Time', timeText(ev)],
         ['Where', ev.where], ['Cost', ev.cost], ['Expected', ev.estAttendance], ['Joint event', ev.joint ? 'Yes' : 'No'],
         ['Sign-up needed', ev.signup ? 'Yes' : 'No'], ['On AF Connect', AF_CONNECT[ev.afConnect]],
       ])),
@@ -265,7 +275,7 @@ export function requestView(ctx) {
             : id === 'social' ? d.kinds.join(', ') : id === 'sponsorship' && d.breakEven ? 'Break-even: ' + d.breakEven : id === 'web' ? d.page : '';
           return h('li', null, h('strong', null, svc(id).short), ` — ${TEAMS[svc(id).team]} team`, extra && h('small', null, extra));
         }))),
-      hoursCheck(facility(ev.facilityId),ev),
+      hoursCheck(eventActivity(ev),ev),
       lt.late && leadNote(d.date, today),
       h('p', { class: 'hint' }, 'One request. We send each part to the right team.'),
     ];

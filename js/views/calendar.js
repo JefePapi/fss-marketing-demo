@@ -1,7 +1,8 @@
 // Rolling 12-month calendar. Entries are derived from requests on every render.
 import { h, page, pill, facts, select, field, openSheet, copyText, toast } from '../ui.js';
-import { SERVICES, svc, CAL_STATUS, JOB_STATUS, AF_CONNECT, activities, facility } from '../config.js';
+import { SERVICES, svc, CAL_STATUS, JOB_STATUS, AF_CONNECT, activities, eventFacilityName } from '../config.js';
 import { calWindow, calendarEvents, ymd, fmtDate, fmtDay, fmtDM, fmtMonth, militaryTimeText as timeText, daysInMonth, monthCells, MONTHS } from '../model.js';
+import { eventActivity } from './activities.js';
 import { hoursOn, rangesText } from '../hours.js';
 import { holidayMap } from '../seed.js';
 import { exportRows, toCSV, toXLS, toICS, download } from '../export.js';
@@ -38,10 +39,10 @@ export function calendarView(ctx) {
     openSheet(e.title, h('div', { class: 'stack', id: 'event-detail', 'data-test': 'event-detail' },
       h('p', null, pill(ev.status, CAL_STATUS[ev.status]), r.late && pill('late', 'Late request')),
       ev.status === 'cancelled' && r.calendar.cancelReason && h('p', null, 'Reason: ' + r.calendar.cancelReason),
-      h('p',{id:'event-hours'},(()=>{const a=facility(e.facilityId);if(!a.info)return 'No hours listed';const on=hoursOn(a.info,ev.date);return on.closed?'Closed that day: '+(on.label || 'Closed'):'Open that day: '+rangesText(on.ranges);})()),
+      h('p',{id:'event-hours'},(()=>{const a=eventActivity(e);if(!a.info)return 'No hours listed';const on=hoursOn(a.info,ev.date);return on.closed?'Closed that day: '+(on.label || 'Closed'):'Open that day: '+rangesText(on.ranges);})()),
       facts([
         ['Day', fmtDate(ev.date) + (ev.days > 1 ? ` (day ${ev.day} of ${ev.days})` : '')], ['Time', timeText(e)], ['Where', e.where],
-        ['Facility', `${facility(e.facilityId).name} (${e.section})`], ['Contact', r.requester.name], ['Expected', e.estAttendance],
+        ['Facility', `${eventFacilityName(e)} (${e.section})`], ['Contact', r.requester.name], ['Expected', e.estAttendance],
         ['Sign-up needed', e.signup ? 'Yes' : 'No'], ['On AF Connect', AF_CONNECT[e.afConnect]], ['Joint event', e.joint ? 'Yes' : 'No'],
         ['Asked for', r.jobs.length ? r.jobs.map(j => `${svc(j.service).short}: ${JOB_STATUS[j.status]}`).join(' · ') : 'Calendar only'],
         ['Request', r.id],

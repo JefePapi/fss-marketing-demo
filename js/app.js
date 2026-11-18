@@ -17,6 +17,13 @@ import { activitiesView, managerView } from './views/activities.js';
 import { dropActivityDraft } from './views/activity-edit.js';
 import { noticesView, emailsView } from './views/notices.js';
 
+let scrollTimer;
+window.addEventListener('scroll', () => {
+  document.documentElement.classList.add('scrolling');
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => document.documentElement.classList.remove('scrolling'), 150);
+}, { passive: true });
+
 const VIEWS = {
   '': homeView, other: otherView, request: requestView, sent: sentView, status: statusView,
   activities: activitiesView, manager: managerView,
@@ -84,7 +91,10 @@ function render(opts = {}) {
   ctx.actor={name:manager?.name || staffName(ctx.actingAs),role:manager?'manager':'marketing'};
   const path = ctx.parts.join('/'), same = path === lastPath;
   const focusId = same && document.activeElement ? document.activeElement.id : '';
-  if (!same) { closeSheet(); if(!path.includes('/edit/') && path!=='activities/new')dropActivityDraft(); }
+  if (!same) closeSheet();
+  const areaEditor = name === 'activities' && parts[2] === 'areas' &&
+    (parts[3] === 'new' || parts[4] === 'edit');
+  if (!path.includes('/edit/') && path !== 'activities/new' && !areaEditor) dropActivityDraft();
   lastPath = path;
 
   root.classList.toggle('readonly', readonly);

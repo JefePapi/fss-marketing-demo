@@ -1,5 +1,5 @@
 // Export builders. Row building and the CSV/XLS/ICS strings are pure; only download() touches the page.
-import { HEADERS, EXTRA_HEADERS, SHEET_TITLE, CAL_STATUS, AF_CONNECT, TEAMS, OVERALL, staffName, facility } from './config.js';
+import { HEADERS, EXTRA_HEADERS, SHEET_TITLE, CAL_STATUS, AF_CONNECT, TEAMS, OVERALL, staffName, eventFacilityName, eventAreaName } from './config.js';
 import { calendarEvents, parseYmd, ymd, addDays, daysInMonth, MONTHS, DAYS, overallStatus } from './model.js';
 
 const COLS = HEADERS.length + EXTRA_HEADERS.length;
@@ -10,6 +10,8 @@ const yn = b => b ? 'Yes' : 'No';
 const blank = v => v === null || v === undefined ? '' : String(v);
 const row = (kind, cells, status) => ({ kind, status, cells: cells.concat(Array(COLS - cells.length).fill('')) });
 
+const exportLocation = e => eventAreaName(e) ? eventFacilityName(e) : e.where;
+
 function eventCells(ev) {
   const r = ev.req, e = r.event;
   return [
@@ -17,7 +19,7 @@ function eventCells(ev) {
     e.allDay ? 'All Day' : e.start ? hhmm(e.start) + (e.end ? '-' + hhmm(e.end) : '') : 'TBD',
     r.submittedAt ? dmy(ymd(new Date(r.submittedAt))) : '',
     r.late ? 'Late' : 'On Time',
-    e.title, e.where, e.section,
+    e.title, exportLocation(e), e.section,
     r.requester.name + (r.requester.phone ? ', ' + r.requester.phone : ''),
     yn(e.joint), blank(e.estAttendance), blank(e.actualAttendance), yn(e.signup), AF_CONNECT[e.afConnect] || '',
     yn(r.jobs.some(j => j.service === 'sponsorship')),
@@ -69,7 +71,23 @@ export function toXLS(rows) {
 }
 
 const icsText = s => String(s).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
-const fold = line => { const out = []; while (line.length > 73) { out.push(line.slice(0, 73)); line = ' ' + line.slice(73); } out.push(line); return out.join('\r\n'); };
+const utf8 = new TextEncoder();
+function fold(line) {
+  if (utf8.encode(line).length <= 75) return line;
+  const out = [];
+  let part = '', bytes = 0;
+  for (const ch of line) {
+    const size = utf8.encode(ch).length;
+    if (bytes + size > 75) {
+      out.push(part);
+      part = ' ';
+      bytes = 1;
+    }
+    part += ch;
+    bytes += size;
+  }
+  return [...out,part].join('\r\n');
+}
 
 // One VEVENT per request (multi-day trips are one event). Times are local "floating" times.
 export function toICS(requests, win, now = new Date()) {
@@ -85,7 +103,7 @@ export function toICS(requests, win, now = new Date()) {
       lines.push(`DTSTART:${day(e.date)}T${hhmm(e.start)}00`);
       if (e.end || last > e.date) lines.push(`DTEND:${day(last)}T${hhmm(e.end || e.start)}00`);
     }
-    lines.push(`SUMMARY:${icsText(e.title)}`, `LOCATION:${icsText(e.where)}`,
+    lines.push(`SUMMARY:${icsText(e.title)}`, `LOCATION:${icsText(exportLocation(e))}`,
       `DESCRIPTION:${icsText(`${r.id} · ${CAL_STATUS[r.calendar.status]} · Demo sample data`)}`,
       `STATUS:${r.calendar.status === 'cancelled' ? 'CANCELLED' : r.calendar.status === 'good' ? 'CONFIRMED' : 'TENTATIVE'}`, 'END:VEVENT');
   }
@@ -104,5 +122,5 @@ export function download(name, mime, text) {
 
 export function requestRows(requests) {
   const headers=['Request #','Title','Kind','Facility','Event date','Requester','Email','Cc','Priority','Overall status',...Object.values(TEAMS).flatMap(t=>[t+' status',t+' owner',t+' due'])];
-  return [{cells:headers},...requests.map(r=>({cells:[r.id,r.event.title,r.kind || 'event',r.kind==='other'?'':facility(r.event.facilityId).name,r.event.date,r.requester.name,r.requester.email,(r.cc || []).join(', '),r.priority || 'medium',OVERALL[overallStatus(r)],...Object.keys(TEAMS).flatMap(t=>{const jobs=r.jobs.filter(j=>j.team===t);return [jobs.map(j=>j.status).join('; '),jobs.map(j=>staffName(j.owner)).join('; '),jobs.map(j=>j.due || '').join('; ')];})]}))];
+  return [{cells:headers},...requests.map(r=>({cells:[r.id,r.event.title,r.kind || 'event',r.kind==='other'?'':eventFacilityName(r.event),r.event.date,r.requester.name,r.requester.email,(r.cc || []).join(', '),r.priority || 'medium',OVERALL[overallStatus(r)],...Object.keys(TEAMS).flatMap(t=>{const jobs=r.jobs.filter(j=>j.team===t);return [jobs.map(j=>j.status).join('; '),jobs.map(j=>staffName(j.owner)).join('; '),jobs.map(j=>j.due || '').join('; ')];})]}))];
 }

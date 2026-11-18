@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exportRows, toCSV, toXLS, toICS, safeCell } from '../js/export.js';
+import { exportRows, toCSV, toXLS, toICS, safeCell, requestRows } from '../js/export.js';
 import { calWindow } from '../js/model.js';
 import { buildSeeds, holidayMap } from '../js/seed.js';
 
@@ -76,4 +76,17 @@ test('ICS: one VEVENT per request, all-day and cancelled handled', () => {
   assert.ok(/DTSTART;VALUE=DATE:\d{8}\r\n/.test(ics));
   assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n')); assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
   assert.ok(ics.split('\r\n').every(l => l.length <= 75));
+});
+
+test('area names use existing export locations and fold safely in ICS', () => {
+  const req=one(), name='Café '.repeat(10)+'Lane';
+  Object.assign(req.event,{areaId:'sample',areaName:name});
+  const where='Club — '+name, rows=exportRows([req],win,{},true);
+  assert.equal(rows.at(-1).cells[6],where);
+  assert.equal(requestRows([req])[1].cells[3],where);
+  assert.ok(toCSV(rows).includes(where));
+  assert.ok(toXLS(rows).includes(where));
+  const ics=toICS([req],win,now);
+  assert.ok(ics.replaceAll('\r\n ','').includes('LOCATION:'+where+'\r\n'));
+  assert.ok(ics.split('\r\n').every(line=>Buffer.byteLength(line)<=75));
 });

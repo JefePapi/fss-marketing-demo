@@ -19,6 +19,16 @@ Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages
 10. **Staff work:** priority and due filters, auto-assignment, On hold, saved replies, contact edits, move/add parts, related requests, merge duplicates, request CSV and reports.
 11. **Email preview and log:** simulated receipts, assignment, replies, completion, reminders and re-send. **Demo: nothing is sent.**
 
+### Areas
+
+Open Activities and choose Bowling Center to see its five sample areas. Expand
+an area for its weekly hours, closures and sample contact details. In Staff view,
+Marketing and assigned managers can add, edit or remove areas. New areas start
+with a copy of the activity's hours and closures. Manager saves add a Marketing
+notification and simulated email. On a new request, choose an area or leave
+**Whole activity** selected. Warnings use the selected hours and still allow
+sending. Staff facts, status, calendar details and location exports show the area.
+
 ## Limits — please read
 
 - Native date pickers follow the browser’s locale and may show a different first weekday. The demo month grid runs Sunday to Saturday.
@@ -307,6 +317,8 @@ Final size from `wc -c js/*.js js/views/*.js css/app.css`: **155,256 bytes** unm
 
 ## Performance and calendar polish (BACKLOG #4, 2026-11-17)
 
+Run `npm run perf:staff` for the manual desktop staff scroll FPS check.
+
 The atmosphere is one fixed background with three soft radial gradients. Hidden
 legacy light elements keep the shell unchanged; drift animations and blob filters
 are removed. Glass and trays use translucent gradient fills, rims and highlights;
@@ -402,7 +414,8 @@ Calendar entries remain derived from requests; closures do not become events.
 - `tests/hours.spec.mjs`: 27 browser scenarios in both existing projects.
 
 Routes: `#/activities`, `#/activities/<id>`, `#/activities/new`,
-`#/activities/<id>/edit/hours|closures|specials|details|admin`, `#/manager`,
+`#/activities/<id>/edit/hours|closures|specials|details|admin`,
+`#/activities/<id>/areas/new`, `#/activities/<id>/areas/<areaId>/edit`, `#/manager`,
 `#/staff/notifications`, `#/staff/emails`. Only Marketing can open the last two.
 The home Hours and info card and the Activities nav link open the public list.
 
@@ -423,6 +436,7 @@ The home Hours and info card and the Activities nav link open the public list.
 | Notifications | `[data-test="notice"][data-read="0|1"]`, `[data-test="notice-read"]`, `[data-test="notice-request"]`, `#notices-read-all` |
 | Email log | `#email-log-note`, `[data-test="email-entry"][data-trigger="activity-updated"]` |
 | Request info | `#activity-info-wrap`, `[data-test="hours-warning"][data-level="closed|outside"]`, `[data-test="hours-ok"]`, `details#activity-info`, `#activity-info-hours`, `[data-test="closure-near"]` |
+| Areas | `#area-add`, `[data-test="area"][data-area]`, `[data-test="area-edit"]`, `[data-test="area-remove"]`, `#area-name`, `#area-save`, `#activity-cancel`, `#f-areaId` |
 | Staff/calendar info | `section#activity-card`, `[data-test="hours-changed"]`, `#event-hours` |
 
 ### Validation and deviations
@@ -469,3 +483,44 @@ local activity-admin demo, and any inventory revision is parked for the owner.
 
 Counts: **12 PASS, 0 FAIL, 0 N/A** for source/offline checks. Browser verification is
 pending and is not represented as passed.
+
+
+## Validation for BACKLOG #6 and #7
+
+The baseline passed 7 unit files. The final suite passes 8 files with zero
+failures, including area seeding and migration, role checks, request validation,
+removed-area names, and export format checks. All 23 site JS files pass
+`node --check`, and offline DOM smoke checks cover area rendering and request
+picker updates. Playwright lists 224 cases across desktop and phone, including
+one desktop-only check skipped on phone. Its local server could not start.
+A direct attempt failed with `PermissionError: [Errno 1] Operation not permitted`
+on socket creation. Browser behavior and the manual FPS check remain unverified.
+The #6 follow-up keeps controls clickable during scrolling, including on
+phones. On hover-capable devices, the passive scroll listener pauses hover
+transforms until 150 ms after the last scroll event. Hover leaves shadows
+unchanged. The desktop regression covers both normal and paused hover lifts.
+
+The follow-up passes all eight unit files, matching the prior local run, and
+syntax checks for all 23 site JS files plus the updated regression spec. The
+local server remains blocked at socket creation, so browser parity remains
+unverified. JS + CSS totals **196,689 bytes**. Work is local and has no commit
+hash.
+
+### Security checklist for #6 and #7
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Existing demo role checks are reused in the editor and write path. Unit tests exercise unauthorized edits. |
+| No new packages | PASS | The earlier changes added a script to the manifest. The scroll follow-up leaves the manifest and lockfile untouched. |
+| Dependency audit | PASS | Offline audit reports zero vulnerabilities across three development dependencies. Fresh advisories were unavailable offline. |
+| No secrets or real personal data | PASS | New seeds contain the requested area names, fictional schedules and empty contact fields. |
+| Nothing leaves the browser | PASS | Requests, notices and simulated mail are stored locally. Source review found no network calls. |
+| Typed text stays text | PASS | Area labels and notes render through the existing text-node helper. |
+| CSV/XLS/ICS file-format safety | PASS | Tests cover fixed headers, existing escaping, area locations and UTF-8 line folding. Imports in external applications were untested. |
+| CSP | PASS | Existing restrictions retained in the untouched HTML shell. |
+| No official seals or imagery | PASS | Changes add no visual assets. |
+| noindex | PASS | Existing meta tag and robots rules remain in place. |
+| Demo labels and stable hooks | PASS | Shared shell and existing hooks stay in place. New area hooks are documented above. |
+| Local storage growth capped | PASS | Areas are capped at 30 per activity. History, notices and mail use their existing caps. |
+
+Source and offline checklist totals **12 PASS, 0 FAIL, 0 N/A**.
