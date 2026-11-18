@@ -72,18 +72,11 @@ test('Feedback is lazy, saves locally, and prepares a public issue only on reque
   await page.keyboard.press('Shift+Tab');
   await expect(page.locator('#sheet-close')).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', {name:'Also post to GitHub'})).toBeFocused();
+  await expect(page.getByRole('button', {name:'Send another'})).toBeFocused();
+  await expect(page.getByRole('link', {name:/GitHub/})).toHaveCount(0);
   const [entry] = await saved(page);
   expect(entry).toMatchObject({type:'Suggestion', message:sample, name:'Sample reviewer', page:'Queue', route, theme:'a-light', read:false});
   expect(Number.isFinite(Date.parse(entry.at))).toBe(true);
-  const link = page.getByRole('link', {name:'Also post to GitHub'});
-  const url = new URL(await link.getAttribute('href'));
-  expect(url.origin + url.pathname).toBe('https://github.com/JefePapi/fss-marketing-demo/issues/new');
-  expect(Object.fromEntries(url.searchParams)).toMatchObject({title:'[Suggestion] ' + sample, labels:'feedback', template:'feedback.md'});
-  for (const value of ['Suggestion', sample, 'Sample reviewer', 'Queue', route, 'a-light', entry.at, 'Sent from the FSS marketing demo'])
-    expect(url.searchParams.get('body')).toContain(value);
-  await expect(link).toHaveAttribute('target', '_blank');
-  await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   await page.getByText('Send another', {exact:true}).click();
   await expect(field).toBeEmpty();
   await field.fill('Anonymous sample');
@@ -105,11 +98,13 @@ test('Feedback is lazy, saves locally, and prepares a public issue only on reque
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText(sample);
   await expect(rows.locator('sample')).toHaveCount(0);
-  await expect(rows.getByRole('link', {name:'Also post to GitHub'})).toHaveAttribute('href', url.href);
+  await expect(rows.getByRole('link', {name:/GitHub/})).toHaveCount(0);
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', {configurable:true,
     value:{writeText:async value => { window.feedbackClipboard = value; }}}));
   await rows.getByRole('button', {name:'Copy as text'}).click();
-  expect(await page.evaluate(() => window.feedbackClipboard)).toBe(url.searchParams.get('body'));
+  const copied = await page.evaluate(() => window.feedbackClipboard);
+  for (const value of ['Suggestion', sample, 'Sample reviewer', 'Queue', route, 'a-light', 'Sent from the FSS marketing demo'])
+    expect(copied).toContain(value);
   await rows.getByText('Mark read', {exact:true}).click();
   await expect(page.locator('#feedback-unread')).toHaveText('1 unread');
   await rows.getByText('Mark unread', {exact:true}).click();

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEntry, feedbackRows, issueText, issueURL, prependEntry } from '../js/lazy/feedback-model.js';
+import { buildEntry, feedbackRows, issueText, prependEntry } from '../js/lazy/feedback-model.js';
 import { relayResult, postFeedback } from '../js/lazy/feedback-relay.js';
 import { toCSV } from '../js/export.js';
 
@@ -28,28 +28,10 @@ test('Feedback CSV uses stable columns, Anonymous and spreadsheet-safe cells', (
   assert.match(csv, /"Suggestion","'=1\+1","Anonymous"/);
 });
 
-test('GitHub URL encodes a literal Markdown message and cannot change the destination or label', () => {
+test('Copied text keeps a literal Markdown message and names Anonymous', () => {
   const data = {...entry, message:'<img src=x>\n&labels=other # / "✨', name:''};
-  const raw = issueURL(data), url = new URL(raw);
-  assert.equal(url.origin + url.pathname, 'https://github.com/JefePapi/fss-marketing-demo/issues/new');
-  assert.equal(url.searchParams.get('template'), 'feedback.md');
-  assert.equal(url.searchParams.get('labels'), 'feedback');
-  assert.equal(url.searchParams.get('title'), '[Suggestion] ' + data.message.replace('\n',' '));
-  assert.equal(url.searchParams.get('body'), issueText(data));
   assert.match(issueText(data), /\n    <img src=x>\n    &labels=other/);
   assert.match(issueText(data), /Anonymous/);
-  assert.doesNotMatch(raw, /[<>"]/);
-});
-
-test('Public issue drafts remain under 7500 characters, including wide text and oversized routes', () => {
-  for (const message of ['🪁'.repeat(1000), '雪'.repeat(2000), '\ud800'.repeat(2000)]) {
-    const raw = issueURL({...entry, message, route:'#/' + '雪'.repeat(5000)});
-    assert.ok(raw.length < 7500);
-    const args = new URL(raw).searchParams;
-    assert.equal(Array.from(args.get('title').slice('[Suggestion] '.length)).length, 60);
-    assert.match(args.get('body'), /Message truncated/);
-    assert.match(args.get('body'), /Sent from the FSS marketing demo$/);
-  }
 });
 
 test('Relay confirms only a 2xx response with an explicit ok flag', () => {

@@ -1,5 +1,5 @@
 /* Loaded with the sheet or inbox. Shared controls supply the active design's typography and palette. */
-.feedback-body,.feedback-form,.feedback-done,.feedback-list,.card.feedback-card,.feedback-share {
+.feedback-body,.feedback-form,.feedback-done,.feedback-list,.card.feedback-card {
   display:grid; min-width:0; gap:14px;
 }
 .feedback-body .field,.feedback-body .chips { margin:0; min-width:0 }
@@ -11,7 +11,6 @@
 .feedback-body #feedback-from { font-size:.87rem }
 .feedback-done { padding-inline-start:14px; border-inline-start:3px solid var(--picker-active) }
 .feedback-done h3 { max-width:30ch }
-.feedback-share { justify-items:start; gap:6px }
 .feedback-done > button,.feedback-form > button { justify-self:start }
 .feedback-tools,.feedback-byline { display:flex; align-items:center; gap:10px 16px; flex-wrap:wrap }
 .feedback-tools { align-items:end }

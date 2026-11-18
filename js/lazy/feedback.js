@@ -1,6 +1,6 @@
 import { h, field, openSheet, chips, toast } from '../ui.js';
 import { feedbackEntries, writeFeedback, feedbackTemporary, withFeedbackLock } from '../store.js';
-import { TYPES, buildEntry, prependEntry, issueURL } from './feedback-model.js';
+import { TYPES, buildEntry, prependEntry } from './feedback-model.js';
 import { postFeedback, relayResult, feedbackCheck } from './feedback-relay.js';
 
 const BACKENDS = {
@@ -45,11 +45,6 @@ export function feedbackStyles() {
 }
 
 export const memoryNote = 'Browser storage is unavailable. Feedback changes last only until this page closes.';
-export function githubAction(entry) {
-  return h('div', {class:'feedback-share'},
-    h('a', {class:'btn', href:issueURL(entry), target:'_blank', rel:'noopener noreferrer'}, 'Also post to GitHub'),
-    h('p', {class:'hint'}, 'Opens GitHub in a new tab. You need a GitHub account; the post is public.'));
-}
 
 export function openFeedback(opener) {
   feedbackStyles();
@@ -98,7 +93,7 @@ export function openFeedback(opener) {
         const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
         body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
           h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, result.text),
-          feedbackTemporary() && h('p', {class:'note warn'}, memoryNote), githubAction(entry),
+          feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
           h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
         thanks.focus();
       } catch {

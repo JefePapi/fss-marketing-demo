@@ -3,7 +3,7 @@ import { feedbackEntries, withFeedbackLock, writeFeedback, feedbackTemporary, pr
 import { download, toCSV } from '../export.js';
 import { fmtStamp } from '../model.js';
 import { TYPES, feedbackRows, issueText } from './feedback-model.js';
-import { feedbackStyles, githubAction, memoryNote, deliverFeedback } from './feedback.js';
+import { feedbackStyles, memoryNote, deliverFeedback } from './feedback.js';
 import { feedbackCheck, TURNSTILE_SITE_KEY } from './feedback-relay.js';
 
 const canReview = () => pref('staff') && (pref('role') || 'marketing') === 'marketing';
@@ -85,8 +85,7 @@ export function staffFeedback() {
         action('Delete', event => confirmSheet('Delete this feedback from this browser?', 'Delete feedback', async () => {
           await change(entries => entries.filter(e => e.id !== entry.id));
           filter.focus();
-        }, event.currentTarget))),
-      githubAction(entry));
+        }, event.currentTarget))));
   }
 
   function draw() {

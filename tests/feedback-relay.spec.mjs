@@ -75,7 +75,7 @@ for (const [code, text] of [
     await expect(done.locator('[aria-live=polite]')).toHaveText(text);
     if (code !== 201) {
       await expect(done).not.toContainText('Sent');
-      await expect(done.getByRole('link', {name:'Also post to GitHub'})).toBeVisible();
+      await expect(done.getByRole('link', {name:/GitHub/})).toHaveCount(0);
     }
     const records = await entries(page);
     expect(records).toHaveLength(1);
