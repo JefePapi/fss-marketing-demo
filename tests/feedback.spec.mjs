@@ -9,6 +9,10 @@ const sample = 'Add <sample> & a second review?';
 test.beforeEach(async ({page}) => {
   await page.route('https://fss-demo-feedback.jefepapi.workers.dev/feedback',
     route => route.fulfill({status:503, json:{ok:false, error:'not configured'}}));
+  // The live site key is configured; stand in for the Turnstile script so tests stay offline.
+  await page.route('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', route => route.fulfill({
+    contentType:'text/javascript',
+    body:"window.turnstile={render(c,o){c.textContent='Sample check';o.callback('sample-token');return 1},remove(){}};"}));
 });
 const thanks = 'Thanks — your feedback is saved in this demo.';
 

@@ -1,7 +1,7 @@
 import { h } from '../ui.js';
 
 export const FEEDBACK_RELAY_URL = 'https://fss-demo-feedback.jefepapi.workers.dev/feedback';
-export const TURNSTILE_SITE_KEY = '';
+export const TURNSTILE_SITE_KEY = '0x4AAAAAAGHZ9lCct43QwQB_';
 
 export function relayResult(status, body) {
   if (status >= 200 && status < 300 && body?.ok === true)

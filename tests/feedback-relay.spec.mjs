@@ -7,6 +7,17 @@ const entries = page => page.evaluate(() => JSON.parse(localStorage.getItem('mkt
 const sender = page => page.getByRole('button', {name:'Save feedback'});
 const open = page => page.locator('[data-test=feedback-banner]').click();
 const fallback = "Saved in this browser. We couldn't send it right now.";
+// Serve the relay module with a chosen site key so tests never reach Cloudflare.
+async function withKey(page, key) {
+  const source = await readFile(new URL('../js/lazy/feedback-relay.js', import.meta.url), 'utf8');
+  await page.route('**/js/lazy/feedback-relay.js', route => route.fulfill({contentType:'text/javascript',
+    body:source.replace(/TURNSTILE_SITE_KEY = '[^']*'/, `TURNSTILE_SITE_KEY = '${key}'`)}));
+}
+
+test('Live config carries the public Turnstile site key', async () => {
+  const source = await readFile(new URL('../js/lazy/feedback-relay.js', import.meta.url), 'utf8');
+  expect(source).toContain("TURNSTILE_SITE_KEY = '0x4AAAAAAGHZ9lCct43QwQB_'");
+});
 
 for (const [code, text] of [
   [201, 'Sent to the marketing team.'],
@@ -15,6 +26,7 @@ for (const [code, text] of [
   [0, fallback],
 ]) {
   test('Relay saves before POST and reports ' + (code || 'network failure'), async ({page, context}) => {
+    await withKey(page, '');
     const external = [], requests = [];
     page.on('request', request => {
       if (/\.workers\.dev|challenges\.cloudflare\.com|github\.com/.test(new URL(request.url()).hostname))
@@ -74,6 +86,7 @@ for (const [code, text] of [
 }
 
 test('Marketing retries a #12 entry once and keeps its read state', async ({page}) => {
+  await withKey(page, '');
   let attempts = 0;
   await page.route(relay, route => {
     attempts++;
@@ -98,9 +111,7 @@ test('Marketing retries a #12 entry once and keeps its read state', async ({page
 });
 
 test('Configured widget opens on demand and staff retry uses a fresh token', async ({page}) => {
-  const source = await readFile(new URL('../js/lazy/feedback-relay.js', import.meta.url), 'utf8');
-  await page.route('**/js/lazy/feedback-relay.js', route => route.fulfill({contentType:'text/javascript',
-    body:source.replace("TURNSTILE_SITE_KEY = ''", "TURNSTILE_SITE_KEY = 'sample-site-key'")}));
+  await withKey(page, 'sample-site-key');
   let loads = 0;
   await page.route(widget, route => {
     loads++;
@@ -148,6 +159,7 @@ test('Configured widget opens on demand and staff retry uses a fresh token', asy
 });
 
 test('An inbox retry during the original send shares the attempt, even without Web Locks', async ({page}) => {
+  await withKey(page, '');
   await page.addInitScript(() => Object.defineProperty(navigator, 'locks', {value:undefined}));
   let attempts = 0, release;
   const gate = new Promise(resolve => { release = resolve; });
