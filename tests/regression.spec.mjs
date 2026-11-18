@@ -66,3 +66,15 @@ test('Staff scrolling pauses hover lifts without blocking clicks', async ({ page
   await expect.poll(() => card.evaluate(el => el.matches(':hover'))).toBe(true);
   await expect(card).toHaveCSS('box-shadow', shadow);
 });
+
+test('Chromium keeps staff queue card shadows', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'Desktop Chromium only');
+  await page.goto('./#/staff?show=all');
+  const card = page.locator('.qcard').first();
+  await expect(card).toBeVisible();
+  expect(await page.evaluate(() => [
+    CSS.supports('(-moz-appearance: none)'),
+    CSS.supports('selector(::-moz-range-thumb)'),
+  ])).toEqual([false, false]);
+  await expect(card).not.toHaveCSS('box-shadow', 'none');
+});

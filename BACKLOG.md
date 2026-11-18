@@ -130,6 +130,37 @@ the Areas add and edit routes. The shared editor already initializes a fresh
 draft when the activity, section or area changes. That key makes a blanket
 reset on path changes unnecessary for Areas. Sheets still close on path changes.
 
+## 8. Firefox-only scroll fallback — IMPLEMENTED, Chromium and FPS validation pending
+
+Opened 2026-11-18 before implementation. CSS still paints rounded shadows
+and the clipped rear lens. The supplied Firefox measurements support removing
+both. Local baseline: eight unit files pass and Playwright lists 224 cases.
+Git history and live reads are outside the no-git and no-network task scope.
+
+**Close-out:** Added the Firefox-only shadow reset, disabled the rear lens,
+and preserved state markers with borders and outlines. All eight unit files
+and 23 site JS syntax checks pass. Playwright lists 232 cases, including six
+Firefox cases that passed with local files served through request interception.
+Sandbox restrictions block the parity server and Chromium launch. Post-change
+FPS remains unmeasured. JS + CSS: 197,882 bytes. Security checklist in README:
+12 PASS, 0 FAIL, 0 N/A. Working tree only.
+
+## 9. Show area hours to everyone browsing activities — IMPLEMENTED, browser validation pending
+
+Premise: the list only counts areas for managers and detail hides hours in
+collapsed panels. Local baseline: eight unit files pass. The task excludes
+git history and production reads.
+
+**Close-out:** Activity cards show area counts, today's hours and exceptions
+starting within 14 days. Detail cards show the full week, exceptions within
+60 days and sample contact details where available. All eight unit files pass
+with zero failures, matching the local baseline. All 23 site JS files and the
+updated spec pass syntax checks. An offline visitor DOM check passed.
+Playwright discovers 234 tests, including both new visitor cases. The sandbox
+blocks the parity server, so the browser and phone width checks are pending.
+JS + CSS is **198,977 bytes**. README security checklist has 12 PASS, 0 FAIL,
+0 N/A. Working tree only.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

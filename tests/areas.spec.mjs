@@ -1,8 +1,61 @@
 import { test, expect } from '@playwright/test';
-import { addDays, parseYmd, ymd } from '../js/model.js';
+import { addDays, DAYS, parseYmd, ymd } from '../js/model.js';
+import { closureText, hoursOn, rangesText } from '../js/hours.js';
+import { buildActivities } from '../js/seed.js';
 
 const bowling='./#/activities/bowling';
 const area=(p,id)=>p.locator(`[data-test="area"][data-area="${id}"]`);
+
+test('Visitors can read area schedules on the list and detail pages',async({page:p},testInfo)=>{
+  const now=new Date(), today=ymd(now);
+  const seed=buildActivities(now).find(a=>a.id==='bowling');
+  const tacoSeed=seed.areas.find(a=>a.id==='taco-bell');
+  const todayText=info=>{
+    const on=hoursOn(info,today);
+    return on.closed?'Closed today':'Open today '+rangesText(on.ranges);
+  };
+  const checkWidth=async()=>{
+    if(testInfo.project.name==='phone-390')
+      expect(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  };
+  await p.clock.setFixedTime(now);
+  await p.goto('./#/activities');
+  const card=p.locator('[data-test="activity-card"][data-activity="bowling"]');
+  await expect(card.locator('strong')).toHaveText('Bowling Center · 5 areas');
+  await expect(card.locator('[data-test="list-area"]')).toHaveCount(5);
+  for(const id of ['taco-bell','papa-joe-s']){
+    const {name,info}=seed.areas.find(a=>a.id===id);
+    const row=card.locator(`[data-test="list-area"][data-area="${id}"]`);
+    await expect(row).toBeVisible();
+    await expect(row).toHaveText(`${name} — ${todayText(info)}`);
+  }
+  const soon=tacoSeed.info.closures.find(c=>c.date>=today && c.date<=addDays(today,14));
+  if(soon){
+    const line=card.locator('[data-area="taco-bell"] + [data-test="list-area-closure"]');
+    await expect(line).toBeVisible();
+    await expect(line).toContainText(closureText(soon));
+  }
+  await checkWidth();
+
+  await p.goto(bowling);
+  const taco=area(p,'taco-bell');
+  const badge=taco.locator('[data-test="area-today"]');
+  await expect(badge).toBeVisible();
+  await expect(badge).toHaveText(todayText(tacoSeed.info));
+  await expect(badge).toHaveAttribute('data-open',hoursOn(tacoSeed.info,today).closed?'0':'1');
+  const days=taco.locator('.area-hours > div');
+  await expect(days).toHaveCount(7);
+  for(let i=0;i<DAYS.length;i++){
+    await expect(days.nth(i)).toBeVisible();
+    await expect(days.nth(i).locator('dt')).toHaveText(DAYS[i]);
+    await expect(days.nth(i).locator('dd')).toHaveText(rangesText(tacoSeed.info.week[i]));
+  }
+  for(const closure of tacoSeed.info.closures.filter(c=>c.date<=addDays(today,60) && (c.to || c.date)>=today)){
+    await expect(taco.locator('[data-test="area-closure"]').filter({hasText:closureText(closure)})).toBeVisible();
+  }
+  await expect(p.locator('#area-add, [data-test="area-edit"], [data-test="area-remove"]')).toHaveCount(0);
+  await checkWidth();
+});
 
 test('Marketing can add, rename and confirm removal of an area',async({page:p})=>{
   await p.goto('./#/staff');

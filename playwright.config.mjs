@@ -13,8 +13,9 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: 'test-results/parity.json' }]],
   use: { baseURL: base, trace: 'retain-on-failure', acceptDownloads: true },
   projects: [
-    { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1280, height: 900 } } },
-    { name: 'phone-390', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+    { name: 'desktop', testIgnore: /firefox\.spec\.mjs$/, use: { browserName: 'chromium', viewport: { width: 1280, height: 900 } } },
+    { name: 'phone-390', testIgnore: /firefox\.spec\.mjs$/, use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+    { name: 'firefox-desktop', testMatch: /firefox\.spec\.mjs$/, use: { browserName: 'firefox', viewport: { width: 1280, height: 900 } } },
   ],
   webServer: live ? undefined : {
     command: 'python3 -m http.server 4173 --bind 127.0.0.1',

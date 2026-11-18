@@ -6,6 +6,7 @@
     "test": "npm run test:unit && npm run test:parity",
     "test:unit": "node --test tests/*.test.mjs",
     "test:parity": "playwright test",
+    "test:firefox": "playwright test --project=firefox-desktop",
     "perf:staff": "node perf/staff-scroll.mjs",
     "test:live": "BASE_URL=https://jefepapi.github.io/fss-marketing-demo/ playwright test"
   },

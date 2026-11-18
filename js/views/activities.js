@@ -1,6 +1,6 @@
 import { h, page, facts, confirmSheet } from '../ui.js';
 import { activities, MANAGERS, facility, eventArea, eventFacilityName } from '../config.js';
-import { ymd, parseYmd, DAYS, fmtStamp } from '../model.js';
+import { ymd, addDays, parseYmd, DAYS, fmtStamp } from '../model.js';
 import { DAY_KEYS, rangesText, hoursOn, eventCheck, closureText, specialText, canEdit } from '../hours.js';
 import * as store from '../store.js';
 import { activityEdit } from './activity-edit.js';
@@ -30,8 +30,18 @@ export function requestActivityInfo(a,event,today) {
   return [hoursCheck(a,event),h('details',{id:'activity-info','data-test':'activity-info'},h('summary',null,a.name+': hours and info'),activityBrief(a,{event,today,checkLine:false}))].filter(Boolean);
 }
 function cards(list,ctx) {
+  const today=ymd(ctx.now), until=addDays(today,14);
   return list.map(a=>h('a',{class:'card link-card',href:'#/activities/'+a.id,'data-test':'activity-card','data-activity':a.id},
-    h('strong',null,a.name+(ctx.manager?` · ${a.areas.length} ${a.areas.length===1?'area':'areas'}`:'')),h('span',null,`Today: ${rangesText(hoursOn(a.info,ymd(ctx.now)).ranges)}`),
+    h('strong',null,a.name+(a.areas.length?` · ${a.areas.length} ${a.areas.length===1?'area':'areas'}`:'')),h('span',null,`Today: ${rangesText(hoursOn(a.info,today).ranges)}`),
+    a.areas.map(area=>{
+      const on=hoursOn(area.info,today);
+      return [
+        h('span',{class:'sub','data-test':'list-area','data-area':area.id},
+          `${area.name} — ${on.closed?'Closed today':'Open today '+rangesText(on.ranges)}`),
+        area.info.closures.filter(c=>c.date>=today && c.date<=until).map(c=>
+          h('span',{class:'sub','data-test':'list-area-closure'},(c.closed?'Closed ':'Special hours ')+closureText(c))),
+      ];
+    }),
     ctx.staffSide && h('span',{class:'sub'},names(a)),a.archived && h('span',{class:'pill','data-test':'activity-archived'},'Archived')));
 }
 export function managerView(ctx) {
@@ -39,21 +49,28 @@ export function managerView(ctx) {
     ctx.manager ? h('div',{id:'my-activities',class:'stack'},cards(activities().filter(a=>!a.archived && a.managers.includes(ctx.manager.id)),ctx)) : h('p',{id:'pick-role'},'Turn on Staff view and pick a manager role to see My activities.'));
 }
 function areaSection(ctx,a,today) {
-  const edit=canEdit(ctx,a,'areas'), base='#/activities/'+a.id+'/areas/';
+  const edit=canEdit(ctx,a,'areas'), base='#/activities/'+a.id+'/areas/', until=addDays(today,60);
   return h('section',{class:'surface stack'},h('h2',null,'Areas'),
     edit && a.areas.length<30 && h('a',{class:'btn',id:'area-add',href:base+'new'},'Add area'),
     !a.areas.length && h('p',null,'No areas listed'),
-    a.areas.map(area=>h('div',{class:'card stack','data-test':'area','data-area':area.id},
-      h('details',null,h('summary',null,`${area.name} · Today: ${rangesText(hoursOn(area.info,today).ranges)}`),
-        h('dl',null,DAYS.map((day,i)=>h('div',null,h('dt',null,day),h('dd',null,rangesText(area.info.week[i]))))),
-        area.info.closures.filter(c=>(c.to || c.date)>=today).map(c=>h('p',null,closureText(c))),
-        facts([['Phone',area.info.phone],ctx.staffSide && ['Notes for marketing',area.info.notes]])),
-      edit && h('div',{class:'row wrap'},
-        h('a',{class:'btn','data-test':'area-edit',href:base+area.id+'/edit'},'Edit area'),
-        h('button',{type:'button',class:'btn','data-test':'area-remove',onclick:e=>confirmSheet(
-          'Remove '+area.name+'?','Remove area',()=>{
-            if(store.saveActivity(a.id,'areas',{areaId:area.id,remove:true},ctx.actor,new Date()).activity)ctx.refresh();
-          },e.currentTarget)},'Remove area')))));
+    a.areas.length>0 && h('div',{class:'two'},a.areas.map(area=>{
+      const on=hoursOn(area.info,today);
+      return h('div',{class:'card stack area-card','data-test':'area','data-area':area.id},
+        h('h3',null,area.name),
+        h('span',{class:'pill','data-test':'area-today','data-open':on.closed?'0':'1'},
+          on.closed?'Closed today':'Open today '+rangesText(on.ranges)),
+        h('dl',{class:'area-hours'},DAYS.map((day,i)=>h('div',null,
+          h('dt',null,day),h('dd',null,rangesText(area.info.week[i]))))),
+        area.info.closures.filter(c=>c.date<=until && (c.to || c.date)>=today).map(c=>
+          h('p',{'data-test':'area-closure'},(c.closed?'Closed ':'Special hours ')+closureText(c))),
+        facts([['Phone',area.info.phone],ctx.staffSide && ['Notes for marketing',area.info.notes]]),
+        edit && h('div',{class:'row wrap'},
+          h('a',{class:'btn','data-test':'area-edit',href:base+area.id+'/edit'},'Edit area'),
+          h('button',{type:'button',class:'btn','data-test':'area-remove',onclick:e=>confirmSheet(
+            'Remove '+area.name+'?','Remove area',()=>{
+              if(store.saveActivity(a.id,'areas',{areaId:area.id,remove:true},ctx.actor,new Date()).activity)ctx.refresh();
+            },e.currentTarget)},'Remove area')));
+    })));
 }
 export function activitiesView(ctx) {
   const id=ctx.parts[1];

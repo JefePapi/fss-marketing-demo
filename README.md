@@ -21,8 +21,8 @@ Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages
 
 ### Areas
 
-Open Activities and choose Bowling Center to see its five sample areas. Expand
-an area for its weekly hours, closures and sample contact details. In Staff view,
+Open Activities to see each area’s hours today, then choose Bowling Center for weekly hours, upcoming closures and sample contact details.
+In Staff view,
 Marketing and assigned managers can add, edit or remove areas. New areas start
 with a copy of the activity's hours and closures. Manager saves add a Marketing
 notification and simulated email. On a new request, choose an area or leave
@@ -62,7 +62,7 @@ npm test                               # unit + parity
 ```
 index.html            shell: demo banner, header, <main id="app">, footer; CSP + noindex
 404.html              sends unknown addresses back to the home page
-css/app.css           tokens, glass, layout, components, reduced motion, fallbacks
+css/app.css           tokens, glass, layout, components, reduced motion, Firefox scroll fallback (borders and outlines replace shadows)
 js/app.js             hash router, header nav, staff / read-only mode, Pause motion
 js/config.js          services, teams, facilities, fake staff, lead-time rule, labels, the 16 headers
 js/store.js           load / save / reset, memory fallback, number counter
@@ -524,3 +524,41 @@ hash.
 | Local storage growth capped | PASS | Areas are capped at 30 per activity. History, notices and mail use their existing caps. |
 
 Source and offline checklist totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #8
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Application JS and role checks were untouched. |
+| No new packages | PASS | Only a test script was added to the manifest. |
+| Dependency audit | PASS | Offline audit reported zero vulnerabilities across three development dependencies. Fresh advisories were unavailable offline. |
+| No secrets or real personal data | PASS | No data or assets were added. |
+| Nothing leaves the browser | PASS | The fallback adds only local CSS and browser assertions. |
+| Typed text stays text | PASS | The DOM rendering path was untouched. |
+| CSV/XLS/ICS file-format safety | PASS | Export sources were untouched and the export unit tests passed. |
+| CSP | PASS | The HTML shell was untouched. |
+| No official seals or imagery | PASS | No imagery was added. |
+| noindex | PASS | The HTML shell and robots rules were untouched. |
+| Demo labels and stable hooks | PASS | App markup was untouched and browser assertions use existing selectors. |
+| Local storage growth capped | PASS | The fallback adds no storage. |
+
+Source and offline checklist totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #9
+
+| Item | Result | Reason |
+|---|---|---|
+| No login or permission guard removed | PASS | Area editing still uses the existing role checks. Notes still require Staff view. |
+| No new packages | PASS | The dependency manifests were untouched. |
+| Dependency audit | PASS | Offline npm audit reported zero vulnerabilities across the three installed test dependencies. Fresh advisories were unavailable offline. |
+| No secrets or real personal data | PASS | Rendering uses existing demo data. |
+| Nothing leaves the browser | PASS | The change renders local activity data without adding network calls. |
+| Typed text stays text | PASS | Area names, notes and labels render through `h()` as text. |
+| CSV/XLS/ICS file-format safety | PASS | Export code was untouched and format tests passed. |
+| CSP | PASS | The HTML shell was untouched. |
+| No official seals or imagery | PASS | The change adds no imagery. |
+| noindex | PASS | The HTML shell and robots rules were untouched. |
+| Demo labels and stable hooks | PASS | Shared demo labels and existing hooks were preserved. |
+| Local storage growth capped | PASS | The change adds no persisted fields or writes. |
+
+Totals **12 PASS, 0 FAIL, 0 N/A**.
