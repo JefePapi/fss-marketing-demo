@@ -1,0 +1,34 @@
+/* The same printed posters, set against warm paper. */
+:root {
+  color-scheme:light;
+  --bg:#f7f4ee; --panel:#fff; --tile:#fcfaf6; --text:#141414; --sub:#52525b;
+  --hair:rgba(35,28,20,.16); --edge:#81776d; --mint:#14643b; --sky:#155877;
+  --burnt:#a3480c; --picker-active:var(--burnt);
+}
+.site-head { background:var(--panel) }
+.demo-banner { background:#eee5d7; color:#392e23 }
+.hero { background:var(--bg) }
+.hero::before {
+  background:linear-gradient(90deg,var(--bg) 30%,#f7f4eeed 36%,#f7f4ee70 53%,transparent 68%),
+    radial-gradient(ellipse at 72% 45%,transparent 42%,#f7f4eeca 98%);
+}
+.lede,.area-tile summary { color:var(--sub) }
+:focus-visible,.chip input:focus-visible + span { outline-color:var(--burnt) }
+input:focus-visible,select:focus-visible,textarea:focus-visible { box-shadow:none }
+input,select,textarea,.tabs { background:var(--panel) }
+input::placeholder,textarea::placeholder { color:#66616b }
+.btn.primary { color:white }
+#nav a:hover,.foot-links a:hover { color:var(--burnt) }
+#nav a[aria-current]::after { background:var(--burnt) }
+.note.warn,.callout,.thread .private,#activity-hours tr[data-today],.cell.sel { background:#fff0df }
+.err,.s-late,.s-onhold,.s-waiting,.s-high,.s-critical,.s-notconfirmed,[data-test=overdue] { color:var(--burnt) }
+.choicebox { background:var(--panel) }
+.bad input,[aria-invalid=true],.choicebox.on,.cell.today { border-color:var(--burnt) }
+.cell.sel { outline-color:var(--burnt) }
+.shortcut-icon,.count { color:#473a31; background:#efe9df }
+.rail li { color:var(--sub); background:#e8e2da }
+.rail .now { background:var(--amber); color:#211409 }
+.rail .done { background:#ead7c2; color:#4d321a }
+@media (max-width:899px) {
+  .hero::before { background:linear-gradient(180deg,transparent 72px,#f7f4eeeF 160px,var(--bg) 236px) }
+}

@@ -27,7 +27,7 @@ export function aboutView(ctx) {
       store.memoryOnly() && h('p', { class: 'note warn' }, 'This browser is blocking storage. Changes will not be kept after you close this page.')),
     h('div', { class: 'surface stack' },
       h('h2', null, 'Not in this demo'),
-      h('p', null, 'Real email, file uploads, accounts, website-change-only requests, repeating events, proofing rounds, hiding money fields, account administration, shared data between visitors and dark mode are left out on purpose. A gap here is not a decision about the real system.')),
+      h('p', null, 'Real email, file uploads, accounts, website-change-only requests, repeating events, proofing rounds, hiding money fields, account administration and shared data between visitors are left out on purpose. A gap here is not a decision about the real system.')),
     h('div', { class: 'surface stack' },
       h('h2', null, 'Start over'),
       h('p', null, `${store.requests().length} requests are saved in this browser.`),

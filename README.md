@@ -29,6 +29,32 @@ notification and simulated email. On a new request, choose an area or leave
 **Whole activity** selected. Warnings use the selected hours and still allow
 sending. Staff facts, status, calendar details and location exports show the area.
 
+## Designs
+
+Choose a preview under **Choose a design** on Home, or use **Design** in the
+demo banner on any page. Changing the design keeps the current route and
+form inputs. Night Wall opens on a fresh browser. A valid shared link takes
+precedence over the design saved on that device.
+
+| Design | Share parameter |
+|---|---|
+| Night Wall | `?theme=a` |
+| Night Wall Light | `?theme=a-light` |
+| Mission Control | `?theme=b` |
+| Ribbon Glass | `?theme=c` |
+| Current (liquid glass) | `?theme=current` |
+
+Copy the address after switching. Put the parameter **before** the hash, as
+in `./?theme=c#/request` or `./?theme=b#/calendar?readonly=1`. Short names
+`night`, `night-light`, `mission` and `ribbon` also work. Invalid values fall
+back to the saved design or Night Wall. The preference uses `mktdemo.theme`.
+
+Run `npm run size` to check the 220,000-byte unminified initial JS + CSS
+budget. It includes all shared and view JS, base CSS, and the selected
+design’s module and stylesheets. The light variant shares Night Wall’s art
+and adds one CSS layer. The five local WebP previews are counted separately
+from this code budget. See [the #10 verification record](SWITCHER-NOTES.md).
+
 ## Limits — please read
 
 - Native date pickers follow the browser’s locale and may show a different first weekday. The demo month grid runs Sunday to Saturday.
@@ -44,7 +70,7 @@ sending. Staff facts, status, calendar details and location exports show the are
 - If the browser blocks storage (private mode, some Teams tabs) the demo still works from memory and says so in the footer.
 - A real version would store requests on a server so everyone sees the same calendar. That part needs a hosting decision.
 
-Not built on purpose: real email, server uploads, accounts, repeating events, proofing rounds, hiding money fields, account administration, shared data between visitors, dark mode.
+Not built on purpose: real email, server uploads, accounts, repeating events, proofing rounds, hiding money fields, account administration, shared data between visitors.
 
 ## Run it locally
 
@@ -62,7 +88,12 @@ npm test                               # unit + parity
 ```
 index.html            shell: demo banner, header, <main id="app">, footer; CSP + noindex
 404.html              sends unknown addresses back to the home page
-css/app.css           tokens, glass, layout, components, reduced motion, Firefox scroll fallback (borders and outlines replace shadows)
+css/base.css          design picker, banner control and shared responsive layouts
+css/theme-*.css       active design styles and Firefox scroll treatments
+js/theme-boot.js      first-paint selection
+js/theme.js           registry and interactive stylesheet/artwork swap
+js/themes/            lazy hero artwork, icons and wordmarks
+img/themes/           local design previews
 js/app.js             hash router, header nav, staff / read-only mode, Pause motion
 js/config.js          services, teams, facilities, fake staff, lead-time rule, labels, the 16 headers
 js/store.js           load / save / reset, memory fallback, number counter
@@ -88,6 +119,7 @@ robots.txt  .nojekyll  AGENTS.md  BACKLOG.md
 | What | Selector |
 |---|---|
 | Demo banner / footer | `#demo-banner`, `#site-footer` |
+| Design controls | `#theme-select`, `[data-test="theme-picker"]`, `[data-test="theme-option"][data-theme]` |
 | Start the form | `#start-request` |
 | Form step container (one at a time) | `#step-1` … `#step-4` (`data-test="step-N"`), text in `#step-label` |
 | Fill with sample answers | `#fill-sample` |
@@ -560,5 +592,43 @@ Source and offline checklist totals **12 PASS, 0 FAIL, 0 N/A**.
 | noindex | PASS | The HTML shell and robots rules were untouched. |
 | Demo labels and stable hooks | PASS | Shared demo labels and existing hooks were preserved. |
 | Local storage growth capped | PASS | The change adds no persisted fields or writes. |
+
+Totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #10
+
+| Check | Result | Reason |
+|---|---|---|
+| Login and permission guards | PASS | Existing role, manager edit and read-only route checks still run. Switching a design keeps the active role. |
+| Packages | PASS | The dependency lists and lockfile match d13f453. All artwork and previews are local. |
+| Dependency audit | PASS | Offline npm audit returned zero known vulnerabilities. Advisory freshness is limited to the local cache. |
+| Secrets and personal data | PASS | The previews use sample UI. The new storage key holds only a design ID. |
+| Data leaving the browser | PASS | The switch loads bundled local CSS, JS and images. It adds no API, analytics or form submission. |
+| Typed text | PASS | Shared controls use DOM nodes and text through `h()`. SVG elements use DOM APIs. |
+| File formats | PASS | Export code and headers match the baseline. Export tests pass. Preview files decode as WebP. |
+| CSP | PASS | The policy matches d13f453. The boot script loads from the same origin. |
+| Official imagery | PASS | The poster shapes, terrain and ribbon come from the supplied demo designs. |
+| Search indexing | PASS | The noindex tags and robots rules are preserved. |
+| Demo labels and hooks | PASS | Each checked route retains its demo banner, footer and existing workflow controls. |
+| Browser storage | PASS | A single allowlisted preference is overwritten on a switch. Blocked storage is handled. |
+
+Totals **12 PASS, 0 FAIL, 0 N/A**.
+
+### Security checklist for #11
+
+| Check | Result | Reason |
+|---|---|---|
+| Login and permission guards | PASS | The demo role, manager ownership and read-only calendar checks match #10. |
+| Packages | PASS | The manifest and lockfile match #10. Only preinstalled test tools were used. |
+| Dependency audit | PASS | The offline npm audit returned zero known vulnerabilities across three development dependencies. Advisory coverage is limited to the local cache. |
+| Secrets and personal data | PASS | Views and screenshots use existing demo records. |
+| Data leaving the browser | PASS | Changes use local CSS and DOM layout. Downloads still use the existing browser code. |
+| Typed text | PASS | Request titles, numbers and links in Notifications are constructed with the existing text-node helper. |
+| File formats | PASS | CSV, XLS and ICS tests passed. Export code and fixed headers match #10. |
+| CSP | PASS | The policy matches main, including the restrictions on connections and form submissions. |
+| Official imagery | PASS | The site uses the existing demo assets. |
+| Search indexing | PASS | The HTML noindex directive and robots rules are intact. |
+| Demo labels and hooks | PASS | Banner, footer, route links and control selectors are preserved. Firefox exercises them through the UI. |
+| Browser storage | PASS | This change adds no persisted fields or writes. |
 
 Totals **12 PASS, 0 FAIL, 0 N/A**.

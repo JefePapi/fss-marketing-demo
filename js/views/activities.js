@@ -46,14 +46,14 @@ function cards(list,ctx) {
 }
 export function managerView(ctx) {
   return page(h('h1',{tabindex:-1},'My activities'),h('p',{class:'note'},'Demo: sample activities and managers.'),
-    ctx.manager ? h('div',{id:'my-activities',class:'stack'},cards(activities().filter(a=>!a.archived && a.managers.includes(ctx.manager.id)),ctx)) : h('p',{id:'pick-role'},'Turn on Staff view and pick a manager role to see My activities.'));
+    ctx.manager ? h('div',{id:'my-activities',class:'stack activity-grid'},cards(activities().filter(a=>!a.archived && a.managers.includes(ctx.manager.id)),ctx)) : h('p',{id:'pick-role'},'Turn on Staff view and pick a manager role to see My activities.'));
 }
 function areaSection(ctx,a,today) {
   const edit=canEdit(ctx,a,'areas'), base='#/activities/'+a.id+'/areas/', until=addDays(today,60);
-  return h('section',{class:'surface stack'},h('h2',null,'Areas'),
+  return h('section',{class:'surface stack areas'},h('h2',null,'Areas'),
     edit && a.areas.length<30 && h('a',{class:'btn',id:'area-add',href:base+'new'},'Add area'),
     !a.areas.length && h('p',null,'No areas listed'),
-    a.areas.length>0 && h('div',{class:'two'},a.areas.map(area=>{
+    a.areas.length>0 && h('div',{class:'two area-grid'},a.areas.map(area=>{
       const on=hoursOn(area.info,today);
       return h('div',{class:'card stack area-card','data-test':'area','data-area':area.id},
         h('h3',null,area.name),
@@ -75,7 +75,7 @@ function areaSection(ctx,a,today) {
 export function activitiesView(ctx) {
   const id=ctx.parts[1];
   if(!id)return page(h('h1',{tabindex:-1},'Activities'),h('p',{class:'note'},'Demo: made-up hours and contact details.'),
-    ctx.staff && h('a',{class:'btn',id:'activity-add',href:'#/activities/new'},'Add activity'),h('div',{class:'stack'},cards(activities().filter(a=>ctx.staff || !a.archived),ctx)));
+    ctx.staff && h('a',{class:'btn',id:'activity-add',href:'#/activities/new'},'Add activity'),h('div',{class:'stack activity-grid'},cards(activities().filter(a=>ctx.staff || !a.archived),ctx)));
   const a=store.activity(id);
   if(id==='new' || ctx.parts[2]==='edit')return activityEdit(ctx,a,id==='new'?'admin':ctx.parts[3]);
   if(!a)return page(h('h1',{tabindex:-1},'Activity not found'));

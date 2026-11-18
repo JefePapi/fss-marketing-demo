@@ -37,7 +37,7 @@ export function staffQueue(ctx) {
 
   const card = r => {
     const overall = overallStatus(r), teams = teamsOf(r).sort((a, b) => (b === team) - (a === team));
-    return h('a', { class: 'card qcard', href: '#/staff/' + r.id, 'data-test': 'queue-card', 'data-request': r.id },
+    return h('a', { class: 'card qcard', 'data-band': r.jobs[0]?.team, href: '#/staff/' + r.id, 'data-test': 'queue-card', 'data-request': r.id },
       h('div', { class: 'qmain' }, h('span', { class: 'eyebrow' }, r.id), h('strong', null, r.event.title), h('span', { class: 'sub' }, r.kind === 'other' ? 'Non-event request' : facility(r.event.facilityId).name)),
       h('div', { class: 'qmeta' }, h('span', null, r.kind === 'other' ? 'Non-event request' : 'Event: ' + fmtDay(r.event.date)), h('span', { class: 'sub' }, 'From: ' + r.requester.name)),
       h('div', { class: 'qstatus' }, pill(overall, OVERALL[overall]), ['high','critical'].includes(r.priority) && pill(r.priority,r.priority[0].toUpperCase()+r.priority.slice(1)),
@@ -62,16 +62,18 @@ export function staffQueue(ctx) {
     label, count !== undefined && h('span', { class: 'count' }, String(count)));
 
   return page(
-    h('div', { class: 'surface stack' },
-      h('a',{id:'go-emails',href:'#/staff/emails'},'Email log'), h('a',{id:'go-notices',href:'#/staff/notifications'},'Notifications'),
-      h('a',{id:'go-reports',href:'#/staff/reports'},'Reports'),
-      h('button',{id:'export-requests',class:'btn',type:'button',onclick:()=>download('requests-demo.csv','text/csv;charset=utf-8',toCSV(requestRows(filtered())))},'Download requests (CSV)'),
+    h('div', { class: 'surface stack queue-controls' },
       h('h1', { tabindex: '-1' }, team === 'all' ? 'Queue' : TEAMS[team] + ' queue'),
-      h('nav', { class: 'tabs', 'aria-label': 'Team' }, [['all', 'All'], ...Object.entries(TEAMS)].map(([t, l]) => tab('team-' + t, l, t === team, href(t, show), sorted(t).length))),
-      h('nav', { class: 'tabs small', 'aria-label': 'Show' }, Object.entries(SHOWS).map(([s, l]) => tab('show-' + s, l, s === show, href(team, s)))),
-      field('queue-status','Status',select('queue-status',[['any','Any status'],...Object.entries(JOB_STATUS)],status,e=>{status=e.target.value;draw();})),
+      h('div', {class:'queue-tools'}, h('a',{id:'go-emails',href:'#/staff/emails'},'Email log'), h('a',{id:'go-notices',href:'#/staff/notifications'},'Notifications'),
+      h('a',{id:'go-reports',href:'#/staff/reports'},'Reports'),
+      h('button',{id:'export-requests',class:'btn',type:'button',onclick:()=>download('requests-demo.csv','text/csv;charset=utf-8',toCSV(requestRows(filtered())))},'Download requests (CSV)')),
+      h('div', {class:'queue-tabs'}, h('nav', { class: 'tabs', 'aria-label': 'Team' }, [['all', 'All'], ...Object.entries(TEAMS)].map(([t, l]) => tab('team-' + t, l, t === team, href(t, show), sorted(t).length))),
+      h('nav', { class: 'tabs small', 'aria-label': 'Show' }, Object.entries(SHOWS).map(([s, l]) => tab('show-' + s, l, s === show, href(team, s))))),
+      h('div', {class:'queue-fields'}, field('queue-status','Status',select('queue-status',[['any','Any status'],...Object.entries(JOB_STATUS)],status,e=>{status=e.target.value;draw();})),
       field('queue-priority','Priority',select('queue-priority',[['any','Any priority'],...['critical','high','medium','low'].map(x=>[x,x[0].toUpperCase()+x.slice(1)])],priority,e=>{priority=e.target.value;draw();})),
-      field('queue-search', 'Search requests', input('queue-search', 'search', q, e => { q = e.target.value; draw(); }, { autocomplete: 'off' }))),
+      field('queue-search', 'Search requests', input('queue-search', 'search', q, e => { q = e.target.value; draw(); }, { autocomplete: 'off' })))),
+    h('div', {class:'queue-columns','aria-hidden':'true'},
+      ['Request','Event / requester','Status / priority','Team progress'].map(label => h('span',null,label))),
     list,
     h('div', { class: 'row end' }, h('button', { class: 'btn', type: 'button', id: 'reset-demo-staff', onclick: e => ctx.resetDemo(e.target) }, 'Reset demo data')));
 }

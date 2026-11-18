@@ -69,7 +69,7 @@ test('Staff scrolling pauses hover lifts without blocking clicks', async ({ page
 
 test('Chromium keeps staff queue card shadows', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'Desktop Chromium only');
-  await page.goto('./#/staff?show=all');
+  await page.goto('./?theme=current#/staff?show=all');
   const card = page.locator('.qcard').first();
   await expect(card).toBeVisible();
   expect(await page.evaluate(() => [

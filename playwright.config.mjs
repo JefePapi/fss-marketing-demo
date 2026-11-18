@@ -4,6 +4,12 @@ import { defineConfig } from '@playwright/test';
 const live = process.env.BASE_URL;
 const base = live || 'http://127.0.0.1:4173/';
 
+const theme = process.env.THEME;
+const storageState = theme ? {
+  cookies: [],
+  origins: [{ origin: new URL(base).origin, localStorage: [{ name: 'mktdemo.theme', value: theme }] }],
+} : undefined;
+
 export default defineConfig({
   testDir: './tests',
   testMatch: /.*\.spec\.mjs$/,
@@ -11,7 +17,7 @@ export default defineConfig({
   retries: live ? 1 : 0,
   workers: live ? 4 : undefined,
   reporter: [['list'], ['json', { outputFile: 'test-results/parity.json' }]],
-  use: { baseURL: base, trace: 'retain-on-failure', acceptDownloads: true },
+  use: { baseURL: base, storageState, trace: 'retain-on-failure', acceptDownloads: true },
   projects: [
     { name: 'desktop', testIgnore: /firefox\.spec\.mjs$/, use: { browserName: 'chromium', viewport: { width: 1280, height: 900 } } },
     { name: 'phone-390', testIgnore: /firefox\.spec\.mjs$/, use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },

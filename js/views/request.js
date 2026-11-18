@@ -2,6 +2,7 @@
 import { h, field, input, textarea, select, chips, facts, page } from '../ui.js';
 import { activities, facility, eventArea, eventFacilityName, SERVICES, svc, TEAMS, SIZES, SOCIAL_KINDS, AF_CONNECT, OLD_FORMS } from '../config.js';
 import { leadTime, ymd, fmtDM, fmtDate, dateText, timeText, newJob, diffDays, isYmd } from '../model.js';
+import { themeStepArt } from '../theme.js';
 import * as store from '../store.js';
 
 import { requestActivityInfo, hoursCheck, eventActivity } from './activities.js';
@@ -175,8 +176,9 @@ export function requestView(ctx) {
   const set = k => e => { d[k] = e.target.value; save(); };
 
   const rail = h('ol', { class: 'rail', 'aria-hidden': 'true' }, STEPS.map((_, i) =>
-    h('li', { class: i + 1 < d.step ? 'done' : i + 1 === d.step ? 'now' : '' }, h('span', null, i + 1 < d.step ? '✓' : String(i + 1)))));
-  const head = h('div', { class: 'surface' },
+    h('li', { class: i + 1 < d.step ? 'done' : i + 1 === d.step ? 'now' : '', 'aria-current': i + 1 === d.step ? 'step' : null }, h('span', null, i + 1 < d.step ? '✓' : String(i + 1)), h('small', null, ['You','Event','Services','Review'][i]))));
+  const head = h('div', { class: 'surface step-head hud', 'data-step':d.step },
+    themeStepArt(d.step),
     h('p', { class: 'eyebrow', id: 'step-label', 'data-test': 'step-label' }, `Step ${d.step} of 4`), rail,
     h('h1', { tabindex: '-1' }, STEPS[d.step - 1]),
     d.step === 1 && h('p', { class: 'note' }, 'Demo: please use made-up details. Nothing you type leaves this browser.'));

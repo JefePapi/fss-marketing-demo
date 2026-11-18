@@ -37,7 +37,7 @@ export function calendarView(ctx) {
   const detail = (ev, from) => {
     const r = ev.req, e = r.event;
     openSheet(e.title, h('div', { class: 'stack', id: 'event-detail', 'data-test': 'event-detail' },
-      h('p', null, pill(ev.status, CAL_STATUS[ev.status]), r.late && pill('late', 'Late request')),
+      h('p', { class: 'chiprow' }, pill(ev.status, CAL_STATUS[ev.status]), r.late && pill('late', 'Late request')),
       ev.status === 'cancelled' && r.calendar.cancelReason && h('p', null, 'Reason: ' + r.calendar.cancelReason),
       h('p',{id:'event-hours'},(()=>{const a=eventActivity(e);if(!a.info)return 'No hours listed';const on=hoursOn(a.info,ev.date);return on.closed?'Closed that day: '+(on.label || 'Closed'):'Open that day: '+rangesText(on.ranges);})()),
       facts([
@@ -105,9 +105,9 @@ export function calendarView(ctx) {
   });
 
   const at = win.months.indexOf(m);
-  const share = location.href.split('#')[0] + link({ view: 'list', m: '', d: '', readonly: '1' });
+  const share = () => location.href.split('#')[0] + link({ view: 'list', m: '', d: '', readonly: '1' });
   const shareBox = h('div', { class: 'stack sharebox', id: 'share-box', hidden: true },
-    field('share-link', 'Read-only link (add it as a Website tab in Teams)', h('input', { id: 'share-link', 'data-test': 'share-link', type: 'text', readonly: true, value: share, onfocus: e => e.target.select() })));
+    field('share-link', 'Read-only link (add it as a Website tab in Teams)', h('input', { id: 'share-link', 'data-test': 'share-link', type: 'text', readonly: true, value: share(), onfocus: e => e.target.select() })));
   const dl = (name, mime, build) => () => { download(name, mime, build(exportRows(store.requests(), win, hol, eventsOnly))); toast('Downloaded ' + name); };
   const chipBtn = (id, label, on, to) => h('button', { class: 'fchip', type: 'button', id, 'data-test': id, 'aria-pressed': String(on), onclick: () => ctx.go(to) }, label);
 
@@ -132,7 +132,9 @@ export function calendarView(ctx) {
           h('button', {
             class: 'btn', type: 'button', id: 'copy-link', 'data-test': 'copy-link', onclick: async () => {
               shareBox.hidden = false;
-              toast(await copyText(share) ? 'Link copied. Paste it into a Teams Website tab.' : 'Copy the link from the box.');
+              const url = share();
+              shareBox.querySelector('input').value = url;
+              toast(await copyText(url) ? 'Link copied. Paste it into a Teams Website tab.' : 'Copy the link from the box.');
             },
           }, 'Copy link for Teams'))),
       shareBox),

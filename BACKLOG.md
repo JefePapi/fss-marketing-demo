@@ -161,6 +161,42 @@ blocks the parity server, so the browser and phone width checks are pending.
 JS + CSS is **198,977 bytes**. README security checklist has 12 PASS, 0 FAIL,
 0 N/A. Working tree only.
 
+## 10. Five selectable designs — implemented locally, Chromium verification pending
+
+Opened 2026-11-18, approved by Joseph at 13:52. The d13f453 shell loads one
+stylesheet and has no design control. Port the three reference designs onto
+the current routes, add the warm-paper variant and preserve #8 and #9.
+The local baseline passes all eight unit files. Local branch only.
+
+**Close-out, 18 Nov.** Home has five design previews and the sticky banner
+switches designs on every route. The choice persists and can be shared before
+the hash. Scoped assets retain the reference artwork, #8 Firefox treatment
+and #9 public area schedules. Largest initial code payload is **218,269
+bytes** against the documented **220,000-byte** budget. All 67 unit tests
+passed versus 64 on d13f453. Each design passed 224 applicable Firefox
+behavior cases across desktop and phone. All 25 final 1920px Firefox scroll
+measurements met 55 fps. Security review was 12 PASS, 0 FAIL and 0 N/A.
+Changes remain uncommitted on theme-switcher. The sandbox blocked Chromium
+and local server binding. See [SWITCHER-NOTES.md](SWITCHER-NOTES.md) for
+the per-route measurements, intermediate outlier and outstanding checks.
+
+## 11. Staff Queue layout across five designs — complete locally
+
+Opened 18 Nov at Joseph’s request. The supplied live Firefox reproduction and
+the Current stylesheet on theme-switcher confirm that the toolbar, tabs and
+fields lose their layout wrappers. Fix these groups and card chips, inspect
+the related staff routes and verify desktop and phone layouts across designs.
+
+**Close-out, 18 Nov.** All five designs passed the Queue layout regression at
+390, 900, 1024, 1280 and 1920 px. Reviewed 20 Queue screenshots and five phone
+card screenshots, plus the eight requested staff routes. The unit suite passed
+67/67. Firefox passed 225 behavior cases per theme and 41 switcher and
+Firefox-specific cases. Largest initial payload was 219,045 of 220,000 bytes.
+Security checklist totals were 12 PASS, 0 FAIL and 0 N/A. See the
+[layout notes and screenshots](SWITCHER-NOTES.md#backlog-11--staff-queue-layout).
+The sandbox blocked the configured parity server and Chromium launch.
+Local working tree only, based on `d13f453`, alongside uncommitted #10.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

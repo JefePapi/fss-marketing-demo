@@ -1,5 +1,6 @@
 // Hash router and page shell. No network calls anywhere in this app.
 import { h, select, closeSheet, confirmSheet, toast } from './ui.js';
+import { THEMES, currentTheme, setTheme, initTheme, themeStepArt, themeBrand } from './theme.js';
 import { STAFF, MANAGERS, staffName } from './config.js';
 import * as store from './store.js';
 import { otherView } from './views/other.js';
@@ -58,7 +59,8 @@ function resetDemo(from) {
 }
 
 function drawNav(ctx) {
-  const cur = name => ctx.parts[0] === name || (!ctx.parts[0] && name === '') ? 'page' : null;
+  const active = ctx.parts[0] === 'staff' && ctx.parts[1] === 'notifications' ? 'staff/notifications' : ctx.parts[0] || '';
+  const cur = name => active === name ? 'page' : null;
   const a = (id, label, href, name) => h('a', { id, href, 'aria-current': cur(name) }, label);
   const nav = $('nav');
   $('brand').setAttribute('href',ctx.readonly?location.hash:ctx.manager?'#/manager':ctx.staff?'#/staff':'#/');
@@ -67,12 +69,16 @@ function drawNav(ctx) {
   const activityLink=a('nav-activities','Activities','#/activities','activities');
   const role=ctx.staffSide && h('label',{class:'acting',for:'demo-role'},'Role:',select('demo-role',[['marketing','Marketing'],...MANAGERS.filter(m=>m.demo).map(m=>[m.id,m.label+' — '+m.name])],ctx.role,e=>{store.pref('role',e.target.value);dropActivityDraft();go(e.target.value==='marketing'?'#/staff':'#/manager');},{'data-test':'demo-role'}));
   const unread=store.notices().filter(n=>!n.read).length;
-  const notices=a('nav-notices','Notifications','#/staff/notifications','staff');
+  const notices=a('nav-notices','Notifications','#/staff/notifications','staff/notifications');
   if(unread)notices.append(h('span',{id:'notice-count',class:'count','data-test':'notice-count'},unread));
-  nav.replaceChildren(...(ctx.manager?[a('nav-my','My activities','#/manager','manager'),a('nav-calendar','Calendar','#/calendar','calendar'),role,toggle]:ctx.staff?
+  const items = ctx.manager?[a('nav-my','My activities','#/manager','manager'),a('nav-calendar','Calendar','#/calendar','calendar'),role,toggle]:ctx.staff?
     [a('nav-queue','Queue','#/staff','staff'),activityLink,notices,a('nav-calendar','Calendar','#/calendar','calendar'),
       h('label',{class:'acting',for:'acting-as'},'Acting as:',select('acting-as',STAFF.map(s=>[s.id,s.name]),ctx.actingAs,e=>{store.pref('actingAs',e.target.value);render();},{'data-test':'acting-as'})),role,toggle]:
-    [a('nav-home','Home','#/',''),a('nav-request','Request','#/request','request'),activityLink,a('nav-calendar','Calendar','#/calendar','calendar'),toggle]));
+    [a('nav-home','Home','#/',''),a('nav-request','Request','#/request','request'),activityLink,a('nav-calendar','Calendar','#/calendar','calendar'),toggle];
+  const links = items.filter(el => el.tagName === 'A');
+  const settings = items.filter(el => el.tagName === 'LABEL');
+  nav.replaceChildren(h('div', {class:'nav-links'}, links),
+    ...(settings.length ? [h('div', {class:'identity-controls'}, settings)] : []), toggle);
 }
 
 function render(opts = {}) {
@@ -101,7 +107,9 @@ function render(opts = {}) {
   $('about-link').hidden = readonly;
   $('store-note').hidden = !store.memoryOnly();
   drawNav(ctx);
+  activeContext = ctx;
   const app = $('app');
+  app.className = 'route-' + (name || 'home');
   app.replaceChildren(VIEWS[name](ctx));
 
   if (!same || opts.top) {
@@ -115,6 +123,7 @@ function render(opts = {}) {
   started = true;
 }
 let started = false;
+let activeContext;
 
 // Motion: frozen when the visitor asks, here or in their system settings (CSS handles the latter).
 function drawMotion() {
@@ -125,8 +134,38 @@ function drawMotion() {
   b.setAttribute('aria-pressed', String(still));
 }
 
+const designSelect = $('theme-select');
+designSelect.replaceChildren(...THEMES.map(({id, label}) => h('option', {value:id}, label)));
+designSelect.value = currentTheme();
+designSelect.parentElement.hidden = false;
+designSelect.addEventListener('change', () => setTheme(designSelect.value));
+const originalBrand = [...$('brand').childNodes];
+window.addEventListener('designchange', () => {
+  designSelect.value = currentTheme();
+  $('brand').replaceChildren(...(themeBrand() || originalBrand));
+  // Only the home content and wizard illustration depend on the art module.
+  // Keep live form controls, their selection, draft values, and open dialogs.
+  if (!activeContext.parts.length) {
+    const focus = $('app').contains(document.activeElement) && document.activeElement.id;
+    $('app').replaceChildren(homeView(activeContext));
+    if (focus) $(focus)?.focus({preventScroll:true});
+  } else {
+    const head = document.querySelector('.step-head');
+    if (head) {
+      head.querySelector('.step-print, .step-art')?.remove();
+      const art = themeStepArt(Number(head.dataset.step));
+      if (art) head.prepend(art);
+    }
+  }
+});
+window.addEventListener('designerror', () => {
+  designSelect.value = currentTheme();
+  toast('This design could not load. Please try again.');
+});
+
 store.init();
 $('pause-motion').addEventListener('click', () => { store.pref('still', !store.pref('still')); drawMotion(); });
 drawMotion();
 window.addEventListener('hashchange', () => render());
 render();
+initTheme();

@@ -266,7 +266,7 @@ details summary { cursor: pointer; font-weight: 600; min-height: 44px; display: 
   .facts dt { margin-top: 0; padding-top: 2px; }
   .tray { justify-content: flex-end; }
   .tray .btn { flex: 0 1 220px; }
-  .qcard { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.3fr) minmax(0, 1.5fr) minmax(0, 2fr); align-items: center; gap: 16px; }
+  .qcard { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.3fr) minmax(0, 1.6fr) minmax(0, 2fr); align-items: center; gap: 16px; }
   .sheet-wrap { align-items: center; padding: 24px; }
   .sheet { border-radius: var(--r-panel); }
   .menu[open] { flex-basis: auto; }
@@ -363,4 +363,33 @@ th,td { padding:.7rem; text-align:left; border-bottom:1px solid #abc; }
   .btn.primary:not(:focus-visible), .bigcard:not(:focus-visible) {
     outline: 1px solid rgba(23, 118, 234, .65);
   }
+}
+
+:root { --picker-edge:#b7c9db; --picker-paper:#fff; --picker-muted:#36516a; --picker-active:#164766 }
+.rail small { display:none }
+.design-picker { background:rgba(255,255,255,.85); padding:16px; border-radius:var(--r-card) }
+
+.queue-tools .btn { border-color:var(--line) }
+.qcard :is(.pill,.dot) { padding-inline:10px }
+@media (max-width:599px) {
+  .queue-tabs .tab { padding-inline:11px }
+}
+.queue-tabs .tabs { padding:0; border:0; background:none; box-shadow:none }
+@media (min-width:900px) {
+  .activity-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(245px,1fr)); gap:16px; align-items:start }
+  .activity-grid > * { margin:0 }
+}
+
+.home-lower { display:grid; gap:12px; grid-template-columns:repeat(2,minmax(0,1fr)) }
+.home-links,.home-links .entry-grid { display:contents }
+.home-links > h2 { display:none }
+.home-lower .entry-copy { display:grid; gap:2px }
+.home-lower .shortcut,.home-lower .guidance { grid-column:1/-1 }
+.home-lower .guidance { grid-row:3 }
+.guidance ul { padding:0; list-style:none }
+.guidance li { margin:0 }
+.guidance li strong { font-weight:inherit }
+@media (min-width:900px) {
+  .home-lower { gap:16px }
+  .home-lower :is(#go-status,#go-calendar) { grid-column:span 1 }
 }
