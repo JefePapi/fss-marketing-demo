@@ -263,6 +263,23 @@ and passed after restoration. Unit cases passed 74/74, relay cases passed
 was missing. Security checklist 16 PASS, 0 FAIL, 1 N/A. Item #14 remains open
 for PR #1 review.
 
+**Round 3 opened, 23 Nov.** The review found that the first capture refuses a
+keyboard resize or backdrop scroll, and that Mission Control and Ribbon Glass
+Home lack approved artwork. Fix both on PR #1. Main `205a830` predates the
+engine. The earlier read-only Pages check matched main, and this session's
+Pages request could not resolve the host.
+
+**Round 3 close-out.** Capture measures the opening page, then draws on
+demand after keyboard resize or backdrop scroll. Mission Control and Ribbon
+Glass Home use verified theme originals. Desktop and phone tests cover both
+Home references, added paths, deferred capture and tinted masks. Unit cases
+passed 74/74 against main’s 73/73. Relay passed 9/9 on both. Syntax, PNG and
+size checks passed. Night Wall Light measured 219,608 of 220,000 initial
+bytes. Security checklist totals are 16 PASS, 0 FAIL, 1 N/A. Playwright
+discovered all 303 main test names plus 48 capture cases, but the sandbox
+blocked loopback before any cases ran on either revision. Item #14 remains
+open for browser verification and PR #1 review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

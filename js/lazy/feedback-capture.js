@@ -1,12 +1,12 @@
 import { approvedLabel, captureRoute, DESIGNS, messages } from './feedback-capture-policy.js';
-import { paintBox, paintVector } from './feedback-capture-style.js';
-import { themeHero, themeIcon, themeStepArt } from '../theme.js';
+import { snapshotBoxStyle, paintBox, prepareVector } from './feedback-capture-style.js';
+import { themeHero, themeHomeArt, themeIcon, themeStepArt } from '../theme.js';
 
 const MASK = '#68788a';
 const MAX_EDGE = 1280;
 const MAX_ELEMENTS = 2500;
 const MAX_UNSUPPORTED = .12;
-const MAX_MASKED = .65;
+const MAX_MASKED = .50;
 const SHELL = '.atmo,#demo-banner,.site-head,#app,#toast,#site-footer,#feedback-open';
 const PRIVATE = 'input,textarea,select,[contenteditable]:not([contenteditable=false]),' +
   '[data-test=file-item],[data-test=attachment],[data-test=my-request],' +
@@ -17,25 +17,41 @@ const CLIPS = /^(hidden|clip|auto|scroll)$/;
 const rejected = reason => ({ok:false, reason, message:messages[reason]});
 let opening;
 
-// Record the opening position before the sheet or its focus can move it.
+function invalidateOpening() {
+  if (opening) opening.invalidated = true;
+}
+window.addEventListener('hashchange', invalidateOpening);
+window.addEventListener('designchange', invalidateOpening);
+
+// Measure before the sheet or its focus can move the page. Defer raster work.
 export function rememberCapture() {
   const snapshot = opening = {
     route:location.hash, view:document.querySelector('#app > .glass'),
-    viewport:readViewport(), covered:!!document.querySelector('.sheet-wrap,dialog[open]'),
-    detail:!!document.querySelector('#event-detail'),
+    theme:document.documentElement.dataset.theme,
   };
+  try { snapshot.scene = measureOpening(); }
+  catch { snapshot.scene = rejected('misleading-preview'); }
   return () => { if (opening === snapshot) opening = undefined; };
 }
 
 export function capture() {
   if (!opening) return rejected('no-snapshot');
-  const {viewport, route, view} = opening;
-  if (location.hash !== route || !view?.isConnected || document.documentElement.dataset.theme !== viewport.theme) {
+  const {theme, route, view, scene, invalidated} = opening;
+  if (invalidated || location.hash !== route || (view && !view.isConnected) ||
+      document.documentElement.dataset.theme !== theme) {
     opening = undefined;
     return rejected('misleading-preview');
   }
-  try { return opening.result ??= reconstruct(); }
-  catch { return rejected('misleading-preview'); }
+  if (!scene.ok) return scene;
+  if (document.querySelector('#staff-toggle[aria-pressed=true],.route-staff,.route-manager'))
+    return rejected('staff-view');
+  if (document.querySelector('#event-detail,.route-sent')) return rejected('record-detail');
+  try {
+    if (opening.result) return opening.result;
+    const result = scene.render();
+    if (result.ok) opening.result = result;
+    return result;
+  } catch { return rejected('misleading-preview'); }
 }
 
 function readViewport() {
@@ -58,57 +74,52 @@ function intersection(a, b) {
     height:Math.max(0, Math.min(a.y + a.height, b.y + b.height) - y)};
 }
 
-function reconstruct() {
+function measureOpening() {
   const root = document.documentElement;
   const app = document.getElementById('app');
   const path = location.hash.replace(/^#\/?/, '').split('?')[0];
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
   const refusal = captureRoute(parts, {
     staff:!!document.querySelector('#staff-toggle[aria-pressed=true],.route-staff,.route-manager'),
-    detail:opening.detail || !!document.querySelector('#event-detail,.route-sent'),
+    detail:!!document.querySelector('#event-detail,.route-sent'),
   });
   if (refusal) return rejected(refusal);
   const page = parts[0] || '';
-  const viewport = Object.freeze({...opening.viewport, page:page || 'home'});
+  const viewport = Object.freeze({...readViewport(), page:page || 'home'});
   const {width, height, theme} = viewport;
-  const current = readViewport();
   if (!DESIGNS.has(theme) || !app?.classList.contains('route-' + viewport.page) ||
-      opening.covered || document.querySelector('.sheet-wrap:not(:has(.feedback-body)),dialog[open]') ||
-      root.querySelector('link[data-staged]') || viewport.scale !== 1 || width < 1 || height < 1 ||
-      Object.keys(current).some(key => current[key] !== viewport[key]))
+      !opening.view || document.querySelector('.sheet-wrap,dialog[open]') ||
+      root.querySelector('link[data-staged]') || viewport.scale !== 1 || width < 1 || height < 1)
     return rejected('misleading-preview');
 
   const scale = Math.min(window.devicePixelRatio || 1, MAX_EDGE / Math.max(width, height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  const ctx = canvas.getContext('2d', {alpha:false});
-  if (!ctx) return rejected('misleading-preview');
-  // All measurements and paint operations use CSS pixels.
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
-  ctx.scale(canvas.width / width, canvas.height / height);
+  const vmax = Math.max(window.innerWidth, window.innerHeight) / 100;
   const bounds = {x:0, y:0, width, height};
+  const commands = [];
+  const paint = draw => commands.push(draw);
   const clipPath = box => {
-    ctx.beginPath();
-    ctx.rect(box.x, box.y, box.width, box.height);
-    ctx.clip();
+    const path = new Path2D();
+    path.rect(box.x, box.y, box.width, box.height);
+    return path;
   };
   let missing = 0, masked = 0, visited = 0;
   let projection;
   const area = box => box.width * box.height;
   const flag = (box, clip) => { missing += area(intersection(box, clip)); };
   const mask = (box, clip) => {
-    const visible = intersection(box, clip);
+    const x = Math.floor(box.x), y = Math.floor(box.y);
+    const width = Math.ceil(box.x + box.width) - x, height = Math.ceil(box.y + box.height) - y;
+    const visible = intersection({x, y, width, height}, clip);
     if (!area(visible)) return;
     masked += area(visible);
-    ctx.save();
-    // Privacy masks stay opaque inside translucent controls and panels.
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = MASK;
-    ctx.fillRect(Math.floor(box.x), Math.floor(box.y),
-      Math.ceil(box.x + box.width) - Math.floor(box.x), Math.ceil(box.y + box.height) - Math.floor(box.y));
-    ctx.restore();
+    paint((ctx, color) => {
+      ctx.save();
+      // Privacy masks stay opaque inside translucent controls and panels.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, width, height);
+      ctx.restore();
+    });
   };
   const measuredBox = rect => {
     const box = boxOf(rect, viewport);
@@ -116,6 +127,9 @@ function reconstruct() {
   };
 
   const isNightWall = theme === 'a' || theme === 'a-light';
+  const heroArtSelector = {b:'.hero.hud > .survey > svg.terrain', c:'.hero > .hero-art > svg.ribbon'}[theme];
+  // Import only the active theme, and take the trusted SVG from its generator.
+  const heroArt = page === '' && heroArtSelector && app.querySelector(heroArtSelector);
   const posters = new Map();
   const wall = isNightWall && app.querySelector('.route-home > .glass > .hero > .poster-wall');
   if (wall) {
@@ -140,11 +154,8 @@ function reconstruct() {
       }
       return;
     }
-    ctx.font = [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ');
-    ctx.fillStyle = style.color;
-    ctx.letterSpacing = style.letterSpacing === 'normal' ? '0px' : style.letterSpacing;
-    ctx.wordSpacing = style.wordSpacing === 'normal' ? '0px' : style.wordSpacing;
-    const metrics = ctx.measureText('M');
+    const {fontStyle, fontWeight, fontSize, fontFamily, color, letterSpacing, wordSpacing,
+      textTransform, textDecorationLine, textDecorationThickness, textUnderlineOffset} = style;
     // Measure browser line breaks, including words split within a narrow line.
     // Draw a whole line fragment at once to retain the font's kerning.
     const lines = [];
@@ -160,60 +171,70 @@ function reconstruct() {
         last.width = box.x + box.width - last.x;
       } else lines.push({...box, start:i, end:i + 1});
     }
-    for (const line of lines) {
-      if (!area(intersection(line, clip))) continue;
-      let value = text.slice(line.start, line.end).replace(/\s+/g, ' ');
-      if (style.textTransform === 'uppercase') value = value.toUpperCase();
-      if (style.textTransform === 'lowercase') value = value.toLowerCase();
-      const sizing = ctx.measureText(value);
-      const baseline = line.y + (line.height + metrics.fontBoundingBoxAscent - metrics.fontBoundingBoxDescent) / 2;
-      if (!Number.isFinite(baseline) || Math.abs(sizing.width - line.width) > Math.max(3, line.width * .09)) {
-        flag(line, clip);
-        if (!Number.isFinite(baseline)) continue;
+    paint(ctx => {
+      ctx.font = [fontStyle, fontWeight, fontSize, fontFamily].join(' ');
+      ctx.fillStyle = color;
+      ctx.letterSpacing = letterSpacing === 'normal' ? '0px' : letterSpacing;
+      ctx.wordSpacing = wordSpacing === 'normal' ? '0px' : wordSpacing;
+      const metrics = ctx.measureText('M');
+      for (const line of lines) {
+        if (!area(intersection(line, clip))) continue;
+        let value = text.slice(line.start, line.end).replace(/\s+/g, ' ');
+        if (textTransform === 'uppercase') value = value.toUpperCase();
+        if (textTransform === 'lowercase') value = value.toLowerCase();
+        const sizing = ctx.measureText(value);
+        const baseline = line.y + (line.height + metrics.fontBoundingBoxAscent - metrics.fontBoundingBoxDescent) / 2;
+        if (!Number.isFinite(baseline) || Math.abs(sizing.width - line.width) > Math.max(3, line.width * .09)) {
+          flag(line, clip);
+          if (!Number.isFinite(baseline)) continue;
+        }
+        ctx.fillText(value, line.x, baseline);
+        if (textDecorationLine.includes('underline')) {
+          const thickness = parseFloat(textDecorationThickness) || 1;
+          const offset = parseFloat(textUnderlineOffset) || 2;
+          ctx.fillRect(line.x, Math.round(baseline + offset), line.width, thickness);
+        }
       }
-      ctx.fillText(value, line.x, baseline);
-      if (style.textDecorationLine.includes('underline')) {
-        const thickness = parseFloat(style.textDecorationThickness) || 1;
-        const offset = parseFloat(style.textUnderlineOffset) || 2;
-        ctx.fillRect(line.x, Math.round(baseline + offset), line.width, thickness);
-      }
-    }
+    });
   }
 
-  function artwork(el, box, clip) {
+  function artwork(el, box, clip, style) {
     if (el.matches('#feedback-open > svg, #brand > svg')) {
       const feedback = el.parentElement.id === 'feedback-open';
       const side = feedback ? 24 : 32;
       const scale = Math.min(box.width, box.height) / side;
-      const color = getComputedStyle(el).color;
-      ctx.save();
-      ctx.translate(box.x + (box.width - side * scale) / 2, box.y + (box.height - side * scale) / 2);
-      ctx.scale(scale, scale);
-      ctx.fillStyle = ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      if (feedback) ctx.stroke(new Path2D('M21 11a8 8 0 0 1-8 8H9l-6 3 1.5-6A8 8 0 1 1 21 11Z M8 10h8m-8 4h5'));
-      else if (theme === 'a' || theme === 'a-light') {
-        ctx.fill(new Path2D('M2 23 12 5h6L8 23z M12 27 22 9h6L18 27z M22 27l7-12v12z'));
-      } else if (theme === 'c') {
-        for (const [path, ink] of [['M1 23 10 7h7L8 23Z','#82abff'], ['m10 7 8 18h7L17 7Z','#eef9ff'],
-          ['m18 25 9-17h5l-7 17Z','#57dedb']]) {
-          ctx.fillStyle = ink;
-          ctx.fill(new Path2D(path));
+      const color = style.color;
+      paint(ctx => {
+        ctx.save();
+        ctx.translate(box.x + (box.width - side * scale) / 2, box.y + (box.height - side * scale) / 2);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        if (feedback) ctx.stroke(new Path2D('M21 11a8 8 0 0 1-8 8H9l-6 3 1.5-6A8 8 0 1 1 21 11Z M8 10h8m-8 4h5'));
+        else if (theme === 'a' || theme === 'a-light') {
+          ctx.fill(new Path2D('M2 23 12 5h6L8 23z M12 27 22 9h6L18 27z M22 27l7-12v12z'));
+        } else if (theme === 'c') {
+          for (const [path, ink] of [['M1 23 10 7h7L8 23Z','#82abff'], ['m10 7 8 18h7L17 7Z','#eef9ff'],
+            ['m18 25 9-17h5l-7 17Z','#57dedb']]) {
+            ctx.fillStyle = ink;
+            ctx.fill(new Path2D(path));
+          }
+        } else {
+          ctx.beginPath();
+          ctx.arc(16, 16, 13, 0, Math.PI * 2);
+          ctx.stroke();
+          const needle = new Path2D('M22 10 18 18 10 22 14 14Z');
+          if (theme === 'b') ctx.fill(needle);
+          else ctx.stroke(needle);
         }
-      } else {
-        ctx.beginPath();
-        ctx.arc(16, 16, 13, 0, Math.PI * 2);
-        ctx.stroke();
-        const needle = new Path2D('M22 10 18 18 10 22 14 14Z');
-        if (theme === 'b') ctx.fill(needle);
-        else ctx.stroke(needle);
-      }
-      ctx.restore();
+        ctx.restore();
+      });
       return;
     }
 
     let original;
-    if (el.matches('.route-request .step-head > :is(.step-print,.step-art) > svg'))
+    if (el === heroArt) original = themeHomeArt();
+    else if (el.matches('.route-request .step-head > :is(.step-print,.step-art) > svg'))
       original = themeStepArt(Number(el.closest('.step-head').dataset.step))?.firstChild;
     else if (el.matches('.poster > svg')) original = posters.get(el.parentElement)?.firstChild;
     else if (isNightWall && el.matches('.route-home .shortcut-icon > svg')) {
@@ -224,7 +245,21 @@ function reconstruct() {
       const screen = el.getScreenCTM();
       if (screen) {
         const matrix = new DOMMatrix().translate(-viewport.offsetX, -viewport.offsetY).multiply(screen);
-        if (paintVector(ctx, el, projection ? projection.inverse.multiply(matrix) : matrix)) return;
+        const draw = prepareVector(el, projection ? projection.inverse.multiply(matrix) : matrix);
+        if (draw) {
+          const opacity = +style.opacity;
+          const path = clipPath(box);
+          const terrain = theme === 'b' && el === heroArt;
+          const clipArt = el === heroArt;
+          paint(ctx => {
+            ctx.save();
+            if (clipArt) ctx.clip(path);
+            if (terrain) paintTerrain(ctx, box, opacity, draw);
+            else draw(ctx);
+            ctx.restore();
+          });
+          return;
+        }
       }
     }
     // Only loaded demo thumbnails can contribute image pixels. Their URLs
@@ -232,12 +267,18 @@ function reconstruct() {
     if (el instanceof HTMLImageElement && el.parentElement.matches('.design-swatch') &&
         el.closest('.route-home') && el.complete && el.naturalWidth && el.naturalHeight &&
         [...DESIGNS].some(id => el.currentSrc === new URL('./img/themes/' + id + '.webp', location.href).href)) {
-      const scale = Math.max(box.width / el.naturalWidth, box.height / el.naturalHeight);
-      const w = el.naturalWidth * scale, h = el.naturalHeight * scale;
-      ctx.save();
-      clipPath(box);
-      ctx.drawImage(el, box.x + (box.width - w) * .5, box.y + (box.height - h) * .36, w, h);
-      ctx.restore();
+      const {currentSrc, naturalWidth, naturalHeight} = el;
+      const scale = Math.max(box.width / naturalWidth, box.height / naturalHeight);
+      const w = naturalWidth * scale, h = naturalHeight * scale;
+      const path = clipPath(box);
+      paint(ctx => {
+        if (!el.complete || el.currentSrc !== currentSrc || el.naturalWidth !== naturalWidth ||
+            el.naturalHeight !== naturalHeight) throw new Error('Capture thumbnail changed');
+        ctx.save();
+        ctx.clip(path);
+        ctx.drawImage(el, box.x + (box.width - w) * .5, box.y + (box.height - h) * .36, w, h);
+        ctx.restore();
+      });
       return;
     }
     mask(box, clip);
@@ -261,84 +302,100 @@ function reconstruct() {
     const transformed = new Path2D();
     transformed.addPath(local, inverse);
     const extent = projection.box(box);
-    ctx.save();
     const {a:xx,b:yx,c:xy,d:yy,e,f} = forward;
-    ctx.transform(xx,yx,xy,yy,e,f);
-    ctx.clip(transformed);
+    paint(ctx => {
+      ctx.save();
+      ctx.transform(xx,yx,xy,yy,e,f);
+      ctx.clip(transformed);
+    });
     visit(el, extent, {transformed:true});
-    ctx.restore();
+    paint(ctx => ctx.restore());
     projection = undefined;
   }
 
   function pseudo(el, box, name, inset = 0) {
     const style = getComputedStyle(el, name);
     if (style.content === 'none') return;
-    ctx.save();
-    ctx.globalAlpha *= +style.opacity;
-    paintBox(ctx, {x:box.x+inset,y:box.y+inset,width:box.width-2*inset,height:box.height-2*inset},
-      style, {poster:el.matches('.poster')});
-    ctx.restore();
+    const opacity = +style.opacity, poster = el.matches('.poster');
+    const pseudoBox = {x:box.x+inset,y:box.y+inset,width:box.width-2*inset,height:box.height-2*inset};
+    if (el.matches('.hero-art')) pseudoBox.width = parseFloat(style.width) || 0;
+    const appearance = snapshotBoxStyle(style);
+    paint(ctx => {
+      ctx.save();
+      ctx.globalAlpha *= opacity;
+      paintBox(ctx, pseudoBox, appearance, {poster, vmax});
+      ctx.restore();
+    });
   }
 
   function visit(el, clip, {transformed = false} = {}) {
     if (++visited > MAX_ELEMENTS) throw new Error('Capture is too complex');
     const style = getComputedStyle(el);
-    // The sheet hides the desktop Feedback pill after opening.
-    const pill = el.closest('#feedback-open') && document.querySelector('.feedback-body');
-    if (style.display === 'none' || (style.visibility !== 'visible' && !pill) || style.opacity === '0' ||
+    if (style.display === 'none' || style.visibility !== 'visible' || style.opacity === '0' ||
         el.matches('[hidden],br,script,style,noscript')) return;
     const box = measuredBox(el.getBoundingClientRect());
     const visible = intersection(box, clip);
     if (style.display !== 'contents' && !area(visible)) return;
     if (el.matches(PRIVATE)) { mask(box, clip); return; }
-    if (el.matches('svg,img')) { artwork(el, box, clip); return; }
+    if (el.matches('svg,img')) { artwork(el, box, clip, style); return; }
     if (!STRUCTURE.has(el.tagName)) { mask(box, clip); return; }
 
     const matrix = style.transform === 'none' ? null : new DOMMatrixReadOnly(style.transform);
     if (matrix?.is2D && !projection && (el === wall || el.id === 'feedback-open') &&
         matrix.a === matrix.d && matrix.b === -matrix.c && matrix.a > Math.abs(matrix.b))
       return paintTransformed(el, box, clip, matrix);
-    ctx.save();
-    ctx.globalAlpha *= +style.opacity;
     const unsupported = (!transformed && matrix && (!matrix.is2D || matrix.a !== 1 || matrix.d !== 1 || matrix.b || matrix.c)) ||
       style.clipPath !== 'none' || style.filter !== 'none' || style.mixBlendMode !== 'normal' ||
       (style.backdropFilter && style.backdropFilter !== 'none');
     if (unsupported) {
       flag(box, clip);
       mask(box, clip);
-      ctx.restore();
       return;
     }
+    const opacity = +style.opacity;
+    paint(ctx => {
+      ctx.save();
+      ctx.globalAlpha *= opacity;
+    });
     // Current's decorative rear pane sits behind the measured glass panel.
     if (theme === 'current' && el.matches('.glass.lens')) {
       const rear = getComputedStyle(el, '::before');
       if (rear.display !== 'none' && rear.content !== 'none') {
         const pane = {...box, x:box.x + parseFloat(rear.left), y:box.y + parseFloat(rear.top)};
         const right = pane.x + pane.width, bottom = pane.y + pane.height;
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(right - 11, pane.y);
-        ctx.lineTo(right, pane.y);
-        ctx.lineTo(right, bottom);
-        ctx.lineTo(pane.x, bottom);
-        ctx.lineTo(pane.x, bottom - 11);
-        ctx.lineTo(right - 11, bottom - 11);
-        ctx.closePath();
-        ctx.clip();
-        paintBox(ctx, pane, rear);
-        ctx.restore();
+        const path = new Path2D();
+        path.moveTo(right - 11, pane.y);
+        path.lineTo(right, pane.y);
+        path.lineTo(right, bottom);
+        path.lineTo(pane.x, bottom);
+        path.lineTo(pane.x, bottom - 11);
+        path.lineTo(right - 11, bottom - 11);
+        path.closePath();
+        const appearance = snapshotBoxStyle(rear);
+        paint(ctx => {
+          ctx.save();
+          ctx.clip(path);
+          paintBox(ctx, pane, appearance, {vmax});
+          ctx.restore();
+        });
       }
     }
     const swatch = el.matches('.design-swatch') && el.firstElementChild?.naturalWidth;
-    if (area(visible) && !swatch && !paintBox(ctx, box, style, {art:el.matches('.step-print,.step-art')}))
-      flag(box, clip);
+    if (area(visible) && !swatch) {
+      const appearance = snapshotBoxStyle(style);
+      const art = el.matches('.step-print,.step-art,.survey,.hero-art');
+      paint(ctx => {
+        if (!paintBox(ctx, box, appearance, {art, vmax})) flag(box, clip);
+      });
+    }
     const childClip = {
       x:CLIPS.test(style.overflowX) ? visible.x : clip.x,
       y:CLIPS.test(style.overflowY) ? visible.y : clip.y,
       width:CLIPS.test(style.overflowX) ? visible.width : clip.width,
       height:CLIPS.test(style.overflowY) ? visible.height : clip.height,
     };
-    clipPath(childClip);
+    const path = clipPath(childClip);
+    paint(ctx => ctx.clip(path));
     if (wall?.parentElement === el) {
       visit(wall, childClip);
       pseudo(el, box, '::before');
@@ -360,13 +417,17 @@ function reconstruct() {
       for (const [node] of positioned.sort((a, b) => a[1] - b[1])) visit(node, childClip);
     }
     if (posters.has(el)) pseudo(el, box, '::after', 6);
-    ctx.restore();
+    if (theme === 'c' && el.matches('.hero > .hero-art')) pseudo(el, box, '::before');
+    paint(ctx => ctx.restore());
   }
 
-  paintBox(ctx, bounds, getComputedStyle(root));
-  const bodyStyle = getComputedStyle(document.body);
-  if (!paintBox(ctx, bounds, bodyStyle, theme === 'b' ?
-    {dots:{x:-viewport.scrollX - viewport.offsetX, y:-viewport.scrollY - viewport.offsetY}} : {})) return rejected('misleading-preview');
+  const rootStyle = snapshotBoxStyle(getComputedStyle(root));
+  const bodyStyle = snapshotBoxStyle(getComputedStyle(document.body));
+  const dots = theme === 'b' ? {x:-viewport.scrollX - viewport.offsetX, y:-viewport.scrollY - viewport.offsetY} : undefined;
+  paint(ctx => {
+    paintBox(ctx, bounds, rootStyle, {vmax});
+    if (!paintBox(ctx, bounds, bodyStyle, {dots, vmax})) throw new Error('Unsupported page background');
+  });
 
   // Sheet overlays and browser chrome are outside these roots.
   const regions = [...document.body.children].filter(el => !el.matches('.sheet-wrap,script,style,noscript'))
@@ -375,15 +436,60 @@ function reconstruct() {
     if (el.matches(SHELL)) visit(el, bounds);
     else if (getComputedStyle(el).visibility === 'visible') mask(boxOf(el.getBoundingClientRect(), viewport), bounds);
   }
-  if (missing > width * height * MAX_UNSUPPORTED) return rejected('misleading-preview');
-  // Count the final masks only when they could dominate. Overlapping masks and
-  // masks subsequently covered by sticky UI should count once or not at all.
-  if (masked > width * height * MAX_MASKED) {
-    const {data} = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let opaque = 0;
-    for (let i = 0; i < data.length; i += 4)
-      if (data[i] === 104 && data[i+1] === 120 && data[i+2] === 138) opaque++;
-    if (opaque * 4 > data.length * MAX_MASKED) return rejected('misleading-preview');
+  const layoutMissing = missing;
+  function rasterize(maskColor) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext('2d', {alpha:false});
+    if (!ctx) throw new Error('Canvas context unavailable');
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.scale(canvas.width / width, canvas.height / height);
+    missing = layoutMissing;
+    for (const draw of commands) draw(ctx, maskColor);
+    return ctx;
   }
-  return {ok:true, canvas, viewport};
+  function render() {
+    const ctx = rasterize(MASK);
+    if (missing > width * height * MAX_UNSUPPORTED) return rejected('misleading-preview');
+    // Changing the mask color also changes masks tinted by translucent overlays.
+    // Masked pixels covered by opaque content stay the same.
+    if (masked > width * height * MAX_MASKED && masksDominate(ctx, rasterize('#000')))
+      return rejected('misleading-preview');
+    return {ok:true, canvas:ctx.canvas, viewport};
+  }
+  return {ok:true, render};
+}
+
+function masksDominate(preview, comparison) {
+  const {width, height} = preview.canvas;
+  const actual = preview.getImageData(0, 0, width, height).data;
+  const alternate = comparison.getImageData(0, 0, width, height).data;
+  let visible = 0;
+  for (let i = 0; i < actual.length; i += 4) {
+    if (Math.abs(actual[i] - alternate[i]) > 8 || Math.abs(actual[i+1] - alternate[i+1]) > 8 ||
+        Math.abs(actual[i+2] - alternate[i+2]) > 8) visible++;
+  }
+  return visible > width * height * MAX_MASKED;
+}
+
+function paintTerrain(ctx, box, opacity, draw) {
+  // Fade the completed terrain as one layer so ridges still occlude each other.
+  const layer = document.createElement('canvas');
+  layer.width = ctx.canvas.width;
+  layer.height = ctx.canvas.height;
+  const surface = layer.getContext('2d');
+  if (!surface) throw new Error('Terrain layer unavailable');
+  surface.setTransform(ctx.getTransform());
+  draw(surface);
+  const fade = surface.createLinearGradient(box.x, 0, box.x + box.width * .16, 0);
+  fade.addColorStop(0, 'transparent');
+  fade.addColorStop(1, '#000');
+  surface.globalCompositeOperation = 'destination-in';
+  surface.fillStyle = fade;
+  surface.fillRect(box.x, box.y, box.width, box.height);
+  ctx.resetTransform();
+  ctx.globalAlpha *= opacity;
+  ctx.drawImage(layer, 0, 0);
 }

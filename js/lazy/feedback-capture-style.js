@@ -5,6 +5,15 @@ const transparent = value => !value || value === 'transparent' || value === 'rgb
 const sides = ['Top', 'Right', 'Bottom', 'Left'];
 const corners = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'];
 const extent = (value, size) => value.endsWith('%') ? number(value) * size / 100 : number(value);
+const boxProperties = [
+  'backgroundColor', 'backgroundImage', 'backgroundSize', 'color',
+  ...corners.map(corner => 'border' + corner + 'Radius'),
+  ...sides.flatMap(side => ['border' + side + 'Width', 'border' + side + 'Color']),
+];
+
+export function snapshotBoxStyle(style) {
+  return Object.fromEntries(boxProperties.map(property => [property, style[property]]));
+}
 
 function rounded(ctx, box, style) {
   const {x, y, width, height} = box;
@@ -51,12 +60,11 @@ function linear(ctx, box, parts, direction) {
   ctx.fillRect(x, y, width, height);
 }
 
-function radial(ctx, box, parts, direction) {
+function radial(ctx, box, parts, direction, vmax) {
   const position = direction?.match(/^(?:(?:ellipse )?([\d.]+(?:px|vmax)) ([\d.]+(?:px|vmax))|ellipse) at (.+)$/);
   if (!position) return false;
   const xy = position[3].match(/calc\([^)]+\)|[^ ]+/g);
   if (xy?.length !== 2) return false;
-  const vmax = Math.max(window.innerWidth, window.innerHeight) / 100;
   const coordinate = (value, size) => {
     if (value.endsWith('vmax')) return number(value) * vmax;
     const calc = value.match(/^calc\(([\d.]+)% ([+-]) ([\d.]+)px\)$/);
@@ -133,7 +141,7 @@ export function paintBox(ctx, box, style, options = {}) {
             ctx.fill();
           }
         }
-      } else if (!radial(ctx, box, parts, direction)) supported = false;
+      } else if (!radial(ctx, box, parts, direction, options.vmax)) supported = false;
     } catch { supported = false; }
   }
   const borders = sides.map(side => number(style['border' + side + 'Width']));
@@ -156,74 +164,98 @@ export function paintBox(ctx, box, style, options = {}) {
 }
 
 // The caller verifies the complete SVG against the theme's original artwork.
-export function paintVector(ctx, svg, matrix) {
+// Read all geometry from the opening view, including the gradient bounds.
+export function prepareVector(svg, matrix) {
   const definitions = new Map([...svg.querySelectorAll('defs [id]')].map(el => [el.id, el]));
-  const color = (value, fallback) => {
-    const paint = !value || value === 'currentColor' ? fallback : value;
-    if (!/^(?:none|#[\da-f]+|rgba?\([\d., %]+\))$/i.test(paint)) throw new Error('Unsupported vector color');
-    return paint;
-  };
   const referenced = value => definitions.get(value?.match(/^url\(#([\w-]+)\)$/)?.[1]);
-  const fraction = value => extent(value || '0', 1);
-  const draw = (node, depth = 0) => {
+  const commands = [];
+  const transform = ({a,b,c,d,e,f}) => ctx => ctx.transform(a,b,c,d,e,f);
+  const restore = ctx => ctx.restore();
+
+  function prepare(node, depth = 0) {
     if (depth > 8) throw new Error('Unsupported vector nesting');
     if (node.localName === 'defs') return;
-    ctx.save();
-    try {
-      const transforms = node.transform.baseVal;
-      for (let i = 0; i < transforms.numberOfItems; i++) {
-        const {a,b,c,d,e,f} = transforms.getItem(i).matrix;
-        ctx.transform(a,b,c,d,e,f);
-      }
-      if (node.hasAttribute('opacity')) ctx.globalAlpha *= number(node.getAttribute('opacity'));
-      const clip = referenced(node.getAttribute('clip-path'));
-      if (clip?.firstElementChild?.localName === 'path') ctx.clip(new Path2D(clip.firstElementChild.getAttribute('d')));
-      if (node.localName === 'g') {
-        for (const child of node.children) draw(child, depth + 1);
-      } else if (node.localName === 'use') {
-        const shape = definitions.get(node.getAttribute('href')?.match(/^#([\w-]+)$/)?.[1]);
-        if (shape?.localName !== 'g') throw new Error('Unsupported vector reference');
-        draw(shape, depth + 1);
-      } else if (node.localName === 'path') {
-        const path = new Path2D(node.getAttribute('d'));
-        const ink = getComputedStyle(node).color;
-        for (const channel of ['fill', 'stroke']) {
-          const value = node.getAttribute(channel) || 'none';
-          if (value === 'none') continue;
-          const definition = referenced(value);
-          let paint;
-          if (definition?.localName === 'linearGradient') {
-            const box = node.getBBox();
-            if (!box.width || !box.height) continue;
-            // Convert the SVG's object-bounding-box gradient into user units.
-            const x = fraction(definition.getAttribute('x2')), y = fraction(definition.getAttribute('y2'));
-            const dx = x / box.width, dy = y / box.height;
-            const length = (x*x + y*y) / (dx*dx + dy*dy);
-            paint = ctx.createLinearGradient(box.x, box.y, box.x + dx*length, box.y + dy*length);
-            for (const stop of definition.children) {
-              const ink = color(stop.getAttribute('stop-color'));
-              const opacity = stop.getAttribute('stop-opacity') || '1';
-              paint.addColorStop(number(stop.getAttribute('offset')), `color-mix(in srgb, ${ink} ${number(opacity)*100}%, transparent)`);
-            }
-          } else paint = color(value, ink);
+    const opacity = node.hasAttribute('opacity') ? number(node.getAttribute('opacity')) : 1;
+    commands.push(ctx => {
+      ctx.save();
+      ctx.globalAlpha *= opacity;
+    });
+    const transforms = node.transform.baseVal;
+    for (let i = 0; i < transforms.numberOfItems; i++)
+      commands.push(transform(transforms.getItem(i).matrix));
+
+    const clip = referenced(node.getAttribute('clip-path'));
+    if (clip?.firstElementChild?.localName === 'path') {
+      const path = new Path2D(clip.firstElementChild.getAttribute('d'));
+      commands.push(ctx => ctx.clip(path));
+    }
+    if (node.localName === 'g') {
+      for (const child of node.children) prepare(child, depth + 1);
+    } else if (node.localName === 'use') {
+      const shape = definitions.get(node.getAttribute('href')?.match(/^#([\w-]+)$/)?.[1]);
+      if (shape?.localName !== 'g') throw new Error('Unsupported vector reference');
+      prepare(shape, depth + 1);
+    } else if (node.localName === 'path') {
+      const path = new Path2D(node.getAttribute('d'));
+      for (const channel of ['fill', 'stroke']) {
+        const value = node.getAttribute(channel) || 'none';
+        if (value === 'none') continue;
+        const definition = referenced(value);
+        const fill = definition?.localName === 'linearGradient' ?
+          prepareVectorGradient(node.getBBox(), definition) :
+          solidVectorPaint(value, node);
+        if (!fill) continue;
+        const rule = node.getAttribute('fill-rule') === 'evenodd' ? 'evenodd' : 'nonzero';
+        const lineWidth = number(node.getAttribute('stroke-width')) || 1;
+        commands.push(ctx => {
           if (channel === 'fill') {
-            ctx.fillStyle = paint;
-            ctx.fill(path, node.getAttribute('fill-rule') === 'evenodd' ? 'evenodd' : 'nonzero');
+            ctx.fillStyle = fill(ctx);
+            ctx.fill(path, rule);
           } else {
-            ctx.strokeStyle = paint;
-            ctx.lineWidth = number(node.getAttribute('stroke-width')) || 1;
+            ctx.strokeStyle = fill(ctx);
+            ctx.lineWidth = lineWidth;
             ctx.stroke(path);
           }
-        }
-      } else throw new Error('Unsupported vector shape');
-    } finally { ctx.restore(); }
-  };
-  ctx.save();
+        });
+      }
+    } else throw new Error('Unsupported vector shape');
+    commands.push(restore);
+  }
+
   try {
-    const {a,b,c,d,e,f} = matrix;
-    ctx.transform(a,b,c,d,e,f);
-    for (const child of svg.children) draw(child);
-    return true;
-  } catch { return false; }
-  finally { ctx.restore(); }
+    commands.push(ctx => ctx.save(), transform(matrix));
+    for (const child of svg.children) prepare(child);
+    commands.push(restore);
+    return ctx => { for (const draw of commands) draw(ctx); };
+  } catch { return null; }
+}
+
+function vectorColor(value) {
+  if (!/^(?:#[\da-f]+|rgba?\([\d., %]+\))$/i.test(value)) throw new Error('Unsupported vector color');
+  return value;
+}
+
+function solidVectorPaint(value, node) {
+  const paint = vectorColor(value === 'currentColor' ? getComputedStyle(node).color : value);
+  return () => paint;
+}
+
+function prepareVectorGradient(box, definition) {
+  if (!box.width || !box.height) return null;
+  // Convert the SVG's object-bounding-box gradient into user units.
+  const fraction = value => extent(value || '0', 1);
+  const x = fraction(definition.getAttribute('x2')), y = fraction(definition.getAttribute('y2'));
+  const dx = x / box.width, dy = y / box.height;
+  const length = (x*x + y*y) / (dx*dx + dy*dy);
+  const {x:left, y:top} = box;
+  const stops = [...definition.children].map(stop => {
+    const color = vectorColor(stop.getAttribute('stop-color'));
+    const opacity = number(stop.getAttribute('stop-opacity') || '1');
+    return [number(stop.getAttribute('offset')), `color-mix(in srgb, ${color} ${opacity*100}%, transparent)`];
+  });
+  return ctx => {
+    const paint = ctx.createLinearGradient(left, top, left + dx*length, top + dy*length);
+    for (const [offset, color] of stops) paint.addColorStop(offset, color);
+    return paint;
+  };
 }

@@ -1,7 +1,7 @@
 import { limits } from '../files.js';
-import { CAL_STATUS, FACILITIES, SERVICES } from '../config.js';
+import { CAL_STATUS, FACILITIES, LEAD_DAYS, SERVICES } from '../config.js';
 import { DAYS, MONTHS } from '../model.js';
-import { holidayMap, sampleAreaNames, sampleEventTitles } from '../seed.js';
+import { buildActivities, buildSeeds, holidayMap } from '../seed.js';
 
 // Only public views with a known route can provide a capture.
 const PUBLIC = new Set(['', 'request', 'other', 'status', 'calendar', 'activities', 'about']);
@@ -43,6 +43,7 @@ const labels = {
     'Marketing requests', 'What are you', 'planning?', 'One request covers flyers, the website, Flash magazine and more.',
     'One form for marketing help. We send each part to the right team.', 'Marketing for an event or program',
     'Flyers, social media, the Flash magazine, sponsors, the website and the calendar. Typed once.',
+    'Mission Control / Marketing', 'Flyers, social media, sponsors and more. One request reaches every team you need.',
     '“What do', 'you need?”', 'One request. We’ll send each part to the right team.', '→', '↗',
   ],
   other: [
@@ -72,7 +73,22 @@ const labels = {
     ...Object.values(CAL_STATUS),
     'Demo: this calendar shows sample events, plus anything added in this browser. In the real system, everyone would see the same live calendar.'],
   activities: ['Activities', 'Demo: made-up hours and contact details.'],
-  about: ['About this demo', 'What is fake', 'Where the data lives', 'Not in this demo', 'Start over', 'Reset demo data'],
+  about: [
+    'About this demo', 'What is fake', 'Where the data lives', 'Not in this demo', 'Start over', 'Reset demo data',
+    'This is an unofficial prototype for 52 FSS Marketing review. It is not an official Air Force or government site. It shows how one request could replace several forms and fill the rolling calendar by itself.',
+    'Every event, name and email is made up. The emails end in @example.com.',
+    'Staff view has no login. It is a switch so you can see both sides.',
+    `The lead-time note uses a sample rule: ${LEAD_DAYS} calendar days before the event. The agency sets the real rule.`,
+    'Managers, hours and notifications are made up. The role switch is not a login.',
+    'Section codes are for illustration only.',
+    'Saving feedback keeps a browser copy and tries to send it privately to Marketing. You can also open a public GitHub issue draft.',
+    'Marketing requests stay in this browser. A request sent on one phone does not show on another computer.',
+    'The read-only calendar link is a display mode for the demo, not security. It shows the sample events plus whatever that browser added.',
+    'Clearing browser data, or the Reset button below, returns to the samples.',
+    "This demo shows how it would work. A real version stores requests on a server so everyone sees the same calendar; that is the part that needs the agency's hosting answer.",
+    'This browser is blocking storage. Changes will not be kept after you close this page.',
+    'Real email, file uploads, accounts, website-change-only requests, repeating events, proofing rounds, hiding money fields, account administration and shared data between visitors are left out on purpose. A gap here is not a decision about the real system.',
+  ],
 };
 for (const page in labels) labels[page] = new Set(labels[page]);
 
@@ -88,15 +104,14 @@ const labelSlots = {
     '#copy-link, #download-toggle, #filter-clear, #month-prev, #month-next, #agenda > p, ' +
     '#calendar-body :is(.btn.off,.tapnote,.pill,p.sub)',
   activities: '.route-activities > .glass > :is(h1,p.note)',
-  about: '.route-about > .glass > .surface > :is(h1,h2,#reset-demo)',
+  about: '.route-about > .glass > .surface > :is(h1,h2,p,#reset-demo), .route-about > .glass > .surface > ul > li',
 };
 
 const weekdays = DAYS.map(day => day.slice(0, 3));
 const shortMonths = MONTHS.map(month => month.slice(0, 3));
 const holidays = new Set(Object.values(holidayMap({start:'2026-01-01',end:'2026-12-31'})));
-const eventTitles = new Set(sampleEventTitles());
 const facilityNames = new Set(FACILITIES.map(item => item.name));
-const areaNames = new Set(sampleAreaNames());
+let eventTitles, areaNames;
 const hours = /^(?:Closed|\d{2}:\d{2}–\d{2}:\d{2}(?:, \d{2}:\d{2}–\d{2}:\d{2})*)$/;
 
 function calendarLabel(element, text) {
@@ -109,7 +124,10 @@ function calendarLabel(element, text) {
   if (element.matches('#month-grid .dots')) return /^\d{1,3}$/.test(text);
   if (element.matches('#month-grid .more')) return /^\+\d{1,3} more$/.test(text);
   if (element.matches('#calendar-body :is(.holname,.holtag,.holrow)')) return holidays.has(text);
-  if (element.matches('#calendar-body :is(.evchip,.evrow .title)')) return eventTitles.has(text);
+  if (element.matches('#calendar-body :is(.evchip,.evrow .title)')) {
+    eventTitles ??= new Set(buildSeeds().map(({event}) => event.title));
+    return eventTitles.has(text);
+  }
   if (element.matches('#calendar-body :is(.evchip > .t,.evrow .when > .sub)'))
     return /^(?:All day|Time not set|\d{4}(?:–\d{4})?)$/.test(text);
   if (element.matches('#calendar-body :is(.evrow .when,.holrow) > strong')) {
@@ -127,6 +145,7 @@ function activityLabel(element, text) {
   if (element.matches('[data-test=activity-card] > span') && text.startsWith('Today: '))
     return hours.test(text.slice(7));
   if (element.matches('[data-test=activity-card] > [data-test=list-area]')) {
+    areaNames ??= new Set(buildActivities().flatMap(({areas}) => areas.map(({name}) => name)));
     const [area, status] = text.split(' — ');
     return areaNames.has(area) && (status === 'Closed today' && text === area + ' — ' + status ||
       text.startsWith(area + ' — Open today ') && hours.test(text.slice(area.length + 14)));
@@ -139,6 +158,11 @@ export function approvedLabel(element, page, text) {
     return shell.has(text) && !!element.closest('#demo-banner,.site-head,#site-footer,#feedback-open');
   if (page === 'calendar' && calendarLabel(element, text)) return true;
   if (page === 'activities' && activityLabel(element, text)) return true;
+  if (!page && element.matches('.hero.hud h1 > .prompt')) return text === '>';
+  if (!page && element.matches('.hero.hud h1 > .type-line > .glyph')) {
+    const line = element.parentElement;
+    return text.length === 1 && line.textContent === (line.previousElementSibling?.matches('.prompt') ? 'What do' : 'you need?');
+  }
   const view = page || 'home';
   return labels[view]?.has(text) && !!element.closest(labelSlots[view]);
 }

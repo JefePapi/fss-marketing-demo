@@ -26,8 +26,8 @@ async function readCapture(page) {
   });
 }
 
-async function imageComparison(page, png, reference, {box, ink, geometry} = {}) {
-  return page.evaluate(async ({png, reference, box, ink, geometry}) => {
+async function imageComparison(page, png, reference, {box, ink, geometry, withoutArt} = {}) {
+  return page.evaluate(async ({png, reference, box, ink, geometry, withoutArt}) => {
     const pixels = async src => {
       const img = new Image();
       img.src = src;
@@ -41,6 +41,7 @@ async function imageComparison(page, png, reference, {box, ink, geometry} = {}) 
     };
     const actual = await pixels(png);
     const expected = await pixels('data:image/png;base64,' + reference);
+    const backdrop = withoutArt && await pixels('data:image/png;base64,' + withoutArt);
     if (actual.width !== expected.width || actual.height !== expected.height) throw new Error('Reference size differs');
     const {width,height} = actual;
     const region = box || {x:0,y:0,width,height};
@@ -57,7 +58,8 @@ async function imageComparison(page, png, reference, {box, ink, geometry} = {}) 
       for (let x = left; x < right; x++) {
         const at = (y * width + x) * 4;
         if (!closeColor(actual.data, expected.data, at, 40)) different++;
-        if (ink && closeColor(expected.data, ink, at, 22, 0)) {
+        if ((ink && closeColor(expected.data, ink, at, 22, 0)) ||
+            (backdrop && !closeColor(expected.data, backdrop.data, at, 55))) {
           referenceInk++;
           if (closeColor(actual.data, expected.data, at, 38)) matchedInk++;
         }
@@ -96,7 +98,7 @@ async function imageComparison(page, png, reference, {box, ink, geometry} = {}) 
     });
     return {different: different / ((right-left) * (bottom-top)), badMasks, lines,
       referenceInk, matchedInk:referenceInk ? matchedInk / referenceInk : 0};
-  }, {png, reference:reference.toString('base64'), box, ink, geometry});
+  }, {png, reference:reference.toString('base64'), box, ink, geometry, withoutArt:withoutArt?.toString('base64')});
 }
 
 async function referenceScreenshot(page, testInfo, name, mask) {
@@ -224,6 +226,55 @@ for (const theme of ['a', 'a-light']) {
   });
 }
 
+for (const [theme, name, artSelector] of [
+  ['b', 'Mission Control', '.hero .terrain'],
+  ['c', 'Ribbon Glass', '.hero .ribbon'],
+]) {
+  test(`${name} Home artwork matches a browser reference`, async ({page}) => {
+    await page.goto('./?theme=' + theme + '#/');
+    const art = page.locator(artSelector);
+    await expect(art).toBeInViewport();
+    const box = await page.locator('.hero').boundingBox();
+    const options = {mask:[page.locator('#theme-select')], maskColor, scale:'css'};
+    const reference = await page.screenshot(options);
+    const withoutArt = await page.screenshot({...options, style:artSelector + ' { visibility:hidden }'});
+    const result = await openCapture(page);
+    expect(result).toMatchObject({ok:true,viewport:{page:'home',theme,scrollY:0}});
+    const fidelity = await imageComparison(page, result.png, reference, {box,withoutArt});
+    expect(fidelity.different).toBeLessThan(.18);
+    expect(fidelity.referenceInk).toBeGreaterThan(100);
+    expect(fidelity.matchedInk).toBeGreaterThan(.60);
+  });
+
+  test(`An extra live path inside ${name} Home artwork is never painted`, async ({page}) => {
+    await page.goto('./?theme=' + theme + '#/');
+    const art = page.locator(artSelector);
+    await expect(art).toBeInViewport();
+    await art.evaluate(svg => {
+      const path = document.createElementNS(svg.namespaceURI, 'path');
+      const {width, height} = svg.viewBox.baseVal;
+      path.setAttribute('d', `M0 0 H${width} V${height} H0 Z`);
+      path.setAttribute('fill', '#ff00ff');
+      svg.append(path);
+    });
+    const result = await openCapture(page);
+    if (!result.ok) {
+      expect(result).toMatchObject({reason:'misleading-preview',png:undefined});
+      return;
+    }
+    const injectedPixels = await page.evaluate(async () => {
+      const {capture} = await import('./js/lazy/feedback-capture.js');
+      const {canvas} = capture();
+      const {data} = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
+      let count = 0;
+      for (let i = 0; i < data.length; i += 4)
+        if (data[i] > 165 && data[i+1] < 45 && data[i+2] > 165) count++;
+      return count;
+    });
+    expect(injectedPixels).toBe(0);
+  });
+}
+
 for (const [theme, artSelector] of [['a','.step-print'],['c','.step-art']]) {
   test(`The ${theme} wizard illustration matches a browser reference`, async ({page}, testInfo) => {
     test.skip(theme === 'a' && testInfo.project.name === 'phone-390', 'Night Wall hides the step art on phones');
@@ -287,6 +338,38 @@ test('Sheet focus, scrolling and a keyboard-sized resize leave the remembered ca
   expect(after).toEqual({viewport:original.viewport, png:original.png});
 });
 
+test('First capture after typing, a keyboard-sized resize and backdrop scroll matches the opening page', async ({page}) => {
+  await page.goto('./?theme=a#/other');
+  await page.locator('#o-new').evaluate(el => {
+    const banner = document.querySelector('#demo-banner').getBoundingClientRect();
+    scrollTo(0, scrollY + el.getBoundingClientRect().top - banner.bottom - 40);
+  });
+  const opening = await page.evaluate(() => ({
+    scrollY, width:visualViewport.width, height:visualViewport.height,
+  }));
+  expect(opening.scrollY).toBeGreaterThan(100);
+  const lines = await textLines(page, ['label[for=o-new]', 'label[for=o-files]']);
+  const reference = await page.screenshot({mask:[page.locator(privateContent)], maskColor, scale:'css'});
+  await page.locator(banner).evaluate(button => button.click());
+  const message = page.locator('#feedback-message');
+  await expect(message).toBeFocused();
+  await message.fill('SAMPLE SHEET TEXT');
+  await page.setViewportSize({width:opening.width, height:opening.height - 300});
+  await page.evaluate(() => scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => ({scrollY,height:visualViewport.height})))
+    .toEqual({scrollY:0,height:opening.height - 300});
+  await expect(message).toBeVisible();
+
+  const result = await readCapture(page);
+  expect(result).toMatchObject({ok:true,viewport:{...opening,page:'other',theme:'a'}});
+  const fidelity = await imageComparison(page, result.png, reference, {geometry:{lines}});
+  expect(fidelity.different).toBeLessThan(.05);
+  for (const {label, referenceInk, match} of fidelity.lines) {
+    expect(referenceInk, label).toBeGreaterThan(15);
+    expect(match, label).toBeGreaterThan(.85);
+  }
+});
+
 test('Staff, manager and record details cannot produce a capture', async ({page}) => {
   const routes = [
     ['staff','staff-view'], ['staff/notifications','staff-view'], ['staff/feedback','staff-view'],
@@ -332,6 +415,19 @@ test('A fully obscured public preview is refused', async ({page}) => {
     const panel = document.createElement('unknown-preview-panel');
     panel.style.cssText = 'position:fixed;inset:0;z-index:50;pointer-events:none';
     document.body.append(panel);
+  });
+  expect(await openCapture(page)).toMatchObject({ok:false,reason:'misleading-preview',png:undefined});
+});
+
+test('A translucent overlay does not conceal a mostly masked preview', async ({page}) => {
+  await page.goto('./?theme=a#/other');
+  await expect(page.locator('#app h1')).toBeVisible();
+  await page.evaluate(async () => {
+    const {h} = await import('./js/ui.js');
+    const geometry = 'position:fixed;top:20%;left:0;width:100%;height:60%;pointer-events:none;';
+    const mask = h('unknown-preview-panel', {style:geometry + 'z-index:50'});
+    const tint = h('div', {style:geometry + 'z-index:51;background:rgba(4,20,80,.5)'});
+    document.querySelector('#app').append(mask,tint);
   });
   expect(await openCapture(page)).toMatchObject({ok:false,reason:'misleading-preview',png:undefined});
 });

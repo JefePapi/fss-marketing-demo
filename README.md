@@ -725,30 +725,34 @@ Totals **12 PASS, 0 FAIL, 0 N/A** within the audit scope above.
 
 ## Local feedback page capture
 
-When Feedback opens, it records the viewport before mounting the sheet or
-focusing the message box. The first call to `capture()` from
-`./js/lazy/feedback-capture.js` draws the preview if the opening view and
-viewport are still available. Success returns `{ok: true, canvas, viewport}`
+When Feedback opens, it measures the page and records its styles before
+mounting the sheet or focusing the message box. The first call to
+`capture()` from `./js/lazy/feedback-capture.js` draws from those opening
+measurements even if the keyboard resized the viewport or the page scrolled.
+Success returns `{ok: true, canvas, viewport}`
 with a Canvas 2D image at device pixel density, capped at 1,280 pixels on the
 long edge, and the saved scroll, CSS size, visual offset, public route name
 and design. Refusals return `{ok: false, reason, message}`. Closing Feedback
 clears the preview, and a route or design change invalidates it.
 
 The canvas uses measured browser boxes and line breaks, selected theme styles,
-fixed labels and approved demo artwork, including the rotated Night Wall
-posters. Wizard and poster SVGs must match the original theme artwork.
+fixed labels and approved demo artwork, including the Night Wall posters,
+Mission Control terrain and Ribbon Glass ribbons. Capture checks these SVGs
+and the wizard artwork against the theme originals.
 Controls, uploads, displayed private details and unrecognized text receive
 opaque masks. Public calendar dates, known sample titles and activity hours
 remain visible. Staff views, individual records, mostly masked previews and
-views with substantial unsupported effects are refused. Capture leaves minor
+views with substantial unsupported effects are refused. A mask contributes to
+the 50% budget even when a translucent layer tints it. Capture leaves minor
 decorative details, such as shadows, out of the reconstruction.
 
 Run `npx playwright test tests/feedback-capture.spec.mjs --project=desktop --project=phone-390`
-to check the scrolled forms, Night Wall Home at scroll zero and visible wizard
-illustrations. The committed PNGs show Chromium-rendered pages with test-applied
-masks before Feedback opens. The tests compare the reconstructed form, artwork
-and label regions with those references, and check masks and each visible
-file-limit line independently.
+to check the scrolled forms, Home artwork and visible wizard illustrations.
+The tests compare the reconstruction with browser screenshots from before
+Feedback opens. They check form masks and visible file-limit lines
+independently, and compare the first capture after a keyboard-sized resize
+and backdrop scroll with the opening view. Mission Control and Ribbon Glass
+Home references are taken during the test, with and without the artwork.
 
 ### Security checklist for the feedback page-capture engine (backlog #14)
 
@@ -756,19 +760,19 @@ file-limit line independently.
 |---|---|---|
 | Login and permission guards | PASS | Existing guards are intact. The capture policy separately refuses staff mode and staff routes. |
 | Packages | PASS | Dependency manifests and lockfile match main. The tests use installed Playwright. |
-| Dependency audit | PASS | The npm registry advisory audit covered all three locked development dependencies and found zero vulnerabilities. |
+| Dependency audit | PASS | The independent round-2 tester ran `npm audit --json` online at `9af9697` against the same lockfile. Its reported counts were 0 info, 0 low, 0 moderate, 0 high and 0 critical across 3 locked development packages. |
 | Secrets and personal data | PASS | Reference images use sample fixtures and mask private content. The engine never reads input values or upload bytes. |
 | Outbound data | PASS | The capture stays in browser memory. Capture adds no outbound data, public URL, storage, or network endpoint. |
 | Typed text | PASS | The engine paints only approved labels into Canvas and masks unknown text. Existing DOM construction continues to use text nodes. |
 | CSV formula neutralization | N/A | Capture does not touch export code or formulas. |
 | File formats | PASS | Capture returns a raster canvas. The tests encode and decode PNG, and the existing export format checks still run. |
 | CSP, origin, Turnstile and staff guards | PASS | The viewport hook runs before the sheet. CSP, origin checks, Turnstile and staff permissions match main. |
-| Approved artwork and official marks | PASS | The capture checks wizard and poster SVGs against the theme originals. The injected-path browser case verifies that unknown geometry contributes no pixels. |
+| Approved artwork and official marks | PASS | Capture checks the Home and wizard SVGs against the theme originals before saving their geometry. Unknown paths cause a mismatch and the SVG is masked. |
 | Search indexing | PASS | Both HTML documents retain noindex, and robots.txt matches main. |
 | Demo banner, footer and hooks | PASS | The existing shell and test hooks match main. The canvas includes the visible banner and footer. |
-| Controls, uploads and unknown content | PASS | The capture masks controls, file rows, user text and unapproved content with opaque placeholders. Mostly masked output is refused. |
+| Controls, uploads and unknown content | PASS | The capture masks controls, file rows, user text and unapproved content with opaque placeholders. It refuses output with more than 50% visible mask coverage, including tinted masks. |
 | Staff and record details | PASS | The policy rejects staff, staff-side public views and individual records before creating a canvas. |
-| Feedback sheet and keyboard | PASS | Opening Feedback saves viewport metadata. The first capture checks that it can still draw that view and excludes the sheet. The sheet releases the preview on close. |
+| Feedback sheet and keyboard | PASS | Capture measures the viewport, boxes and paint styles before the sheet opens. Drawing reuses those measurements after keyboard resize and backdrop scroll. Closing the sheet releases the preview. |
 | Screen sharing | PASS | Capture uses Canvas 2D and does not invoke `getDisplayMedia`. |
 | Retention and logging | PASS | Capture adds no purge, auto-delete, image logging or token logging. |
 
