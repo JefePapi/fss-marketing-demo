@@ -315,6 +315,21 @@ All 40 JavaScript files passed syntax checks. Night Wall Light remains at
 219,528 of 220,000 initial bytes. Security checklist totals are 17 PASS,
 0 FAIL and 1 N/A. Ready for PR review.
 
+**PR #2, fix round 1 (23 Nov).** Keep the editor off on Pages while
+screenshot delivery is pending. Address the phone layout, destructive
+controls and test gaps from the review on the existing branch.
+
+**Round 1 close-out.** The editor requires a loopback address and an explicit
+flag. The public form keeps the new prompt and sends the same POST bytes as
+main. The phone editor uses the available width with Save and Cancel in view.
+Remove asks for confirmation, and a backdrop tap or body-focused Escape keeps
+the marks and draft. Unit tests passed 77/77 vs 74/74 on main. Relay passed
+9/9 on both. Official browser parity passed 370 tests vs 346, with the same
+five skips and no failing test names. Both storage mutations, the object URL
+mutation and the double-save mutation were caught. Night Wall Light stayed
+at 219,528 initial bytes. Checklist totals are 18 PASS, 0 FAIL and 1 N/A.
+Round 1 is ready for review on PR #2.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

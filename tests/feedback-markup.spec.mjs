@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 const relay = 'https://fss-demo-feedback.jefepapi.workers.dev/feedback';
 const widget = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 const draft = 'Sample: add a <label> & keep the colors.';
+// Raw POST captured from main d2813fb on the same page with the same draft and blocked widget.
+const expectedHomePayload = readFileSync(new URL('./fixtures/main-feedback-post.json', import.meta.url));
 const opener = page => page.locator('[data-test=feedback-banner]');
 const message = page => page.locator('#feedback-message');
 const add = page => page.getByRole('button', {name:'Add page screenshot'});
@@ -17,8 +20,9 @@ test.beforeEach(async ({page}) => {
   await page.route(relay, route => route.fulfill({status:201, json:{ok:true, number:12}}));
 });
 
-async function openFeedback(page, route = '#/') {
-  await page.goto('./?theme=a' + route);
+const previewQuery = '?theme=a&feedback-markup=1';
+async function openFeedback(page, path = './' + previewQuery + '#/') {
+  await page.goto(path);
   await opener(page).click();
   await expect(message(page)).toBeFocused();
   await message(page).fill(draft);
@@ -62,8 +66,23 @@ async function samplePixels(image, points) {
 
 test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', async ({page, context}, {project}) => {
   const touch = project.name === 'phone-390';
+  await page.addInitScript(() => {
+    window.screenshotWrites = [];
+    window.objectURLs = 0;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      window.screenshotWrites.push(String(value));
+      return setItem.call(this, key, value);
+    };
+    const createObjectURL = URL.createObjectURL;
+    URL.createObjectURL = function(object) {
+      window.objectURLs++;
+      return createObjectURL.call(this, object);
+    };
+  });
   await withFixedCapture(page);
   await openFeedback(page);
+  await expect(page.getByText('Preview a screenshot on this device. Only your written feedback is sent.')).toBeVisible();
   const assets = [];
   page.on('request', request => assets.push(new URL(request.url()).pathname));
   await add(page).click();
@@ -72,11 +91,12 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
   await expect(message(page)).toBeHidden();
   await expect(button(page, 'Save feedback')).toHaveCount(0);
   await expect(button(page, 'Undo')).toBeDisabled();
-  for (const name of ['Highlight', 'Circle', 'Note', 'Undo', 'Remove']) {
+  for (const name of ['Highlight', 'Circle', 'Note', 'Undo', 'Remove', 'Save screenshot', 'Cancel']) {
     const {width,height} = await button(page, name).boundingBox();
     expect(Math.min(width, height), name).toBeGreaterThanOrEqual(48);
   }
   expect(await page.locator('#sheet').evaluate(sheet => sheet.scrollWidth <= sheet.clientWidth)).toBe(true);
+  if (touch) await expect(button(page, 'Save screenshot')).toBeInViewport({ratio:1});
 
   const clean = await pixels(page);
   const canvas = surface(page).locator('canvas');
@@ -106,8 +126,14 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
   expect(circled).not.toBe(highlighted);
 
   await button(page, 'Note').click();
+  await canvas.evaluate(el => {
+    el.ownerDocument.addEventListener('pointerup', () => {
+      window.focusAtPointerUp = document.activeElement.id;
+    }, {once:true});
+  });
   await tap(page, .25, .72, touch);
   const note = page.getByRole('textbox', {name:'Note (sample details only)'});
+  expect(await page.evaluate(() => window.focusAtPointerUp)).toBe('screenshot-note');
   await expect(note).toBeFocused();
   const pinned = await pixels(page);
   await note.fill('<b>Sample note</b>');
@@ -118,11 +144,21 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
   await tap(page, .25, .72, touch);
   await note.fill('<b>Sample note</b>');
   const jpeg = await canvas.evaluate(el => el.toDataURL('image/jpeg', .9));
-  await button(page, 'Save screenshot').evaluate(el => { el.click(); el.click(); });
+  const jpegSaves = await button(page, 'Save screenshot').evaluate(el => {
+    const canvas = document.querySelector('.feedback-markup canvas');
+    const toDataURL = canvas.toDataURL.bind(canvas);
+    let saves = 0;
+    canvas.toDataURL = (...options) => { saves++; return toDataURL(...options); };
+    el.click();
+    el.click();
+    return saves;
+  });
+  expect(jpegSaves).toBe(1);
   await expect(message(page)).toHaveValue(draft);
   await expect(preview(page)).toHaveAttribute('src', jpeg);
   await expect(preview(page)).toHaveCount(1);
   await expect(preview(page)).toBeInViewport({ratio:.98});
+  await expect(page.getByText('Screenshot preview for this device.')).toBeVisible();
   await expect(button(page, 'Remove')).toBeFocused();
   await expect(button(page, 'Save feedback')).toHaveCount(1);
   const decoded = Buffer.from(jpeg.split(',')[1], 'base64');
@@ -138,8 +174,15 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
 
   const posted = page.waitForRequest(relay);
   await button(page, 'Save feedback').click();
-  expect((await posted).postData()).toBe(expectedHomePayload);
-  await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
+  expect((await posted).postDataBuffer()).toEqual(expectedHomePayload);
+  await expect(page.getByText('Your written feedback was sent to the marketing team.')).toBeVisible();
+  await expect(page.getByText('The screenshot was a preview on this device.')).toBeVisible();
+  const {writes, objectURLs} = await page.evaluate(() => ({
+    writes:[...window.screenshotWrites, ...Object.values(localStorage), ...Object.values(sessionStorage)],
+    objectURLs:window.objectURLs,
+  }));
+  expect(writes.some(value => value.includes('data:image/') || value.includes(jpeg.split(',')[1]))).toBe(false);
+  expect(objectURLs).toBe(0);
   const saved = await page.evaluate(() => localStorage.getItem('mktdemo.feedback'));
   expect(JSON.parse(saved)).toHaveLength(1);
   expect(saved).not.toContain('data:image/');
@@ -163,14 +206,14 @@ test('keyboard can select, move, mark, undo and return focus', async ({page}) =>
   expect(await button(page, 'Circle').evaluate(el => el.matches(':focus-visible'))).toBe(true);
   await page.keyboard.press('Space');
   await expect(button(page, 'Circle')).toHaveAttribute('aria-pressed', 'true');
-  for (let i = 0; i < 3; i++) await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
   await expect(surface(page)).toBeFocused();
   const center = await pixels(page);
   await page.keyboard.press('ArrowLeft');
   expect(await pixels(page)).not.toBe(center);
   await page.keyboard.press('Enter');
   await expect(button(page, 'Undo')).toBeEnabled();
-  await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Shift+Tab');
   await expect(button(page, 'Undo')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -179,10 +222,13 @@ test('keyboard can select, move, mark, undo and return focus', async ({page}) =>
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
   await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
   await expect(page.locator('#screenshot-note')).toBeFocused();
   await page.keyboard.type('Sample keyboard note');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#screenshot-note')).toBeHidden();
+  await expect(surface(page)).toBeFocused();
+  await expect(button(page, 'Undo')).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(add(page)).toBeFocused();
   await expect(message(page)).toHaveValue(draft);
@@ -190,11 +236,11 @@ test('keyboard can select, move, mark, undo and return focus', async ({page}) =>
   await expect(opener(page)).toBeFocused();
 });
 
-test('Cancel, Close and Remove return to the same unsent form', async ({page}) => {
+test('Cancel, Close and confirmed Remove return to the same unsent form', async ({page}) => {
   await withFixedCapture(page);
   await openFeedback(page);
   await page.locator('#feedback-name').fill('Sample reviewer');
-  for (const action of ['Cancel', 'Close', 'Remove']) {
+  for (const action of ['Cancel', 'Close']) {
     await add(page).click();
     await surface(page).press('Enter');
     await button(page, action).click();
@@ -204,16 +250,48 @@ test('Cancel, Close and Remove return to the same unsent form', async ({page}) =
     await expect(preview(page)).toHaveCount(0);
   }
   await add(page).click();
+  await surface(page).press('Enter');
+  const remove = button(page, 'Remove');
+  expect((await remove.boundingBox()).y).toBeGreaterThan((await button(page, 'Undo').boundingBox()).y + 48);
+  page.once('dialog', dialog => dialog.dismiss());
+  await remove.click();
+  await expect(surface(page)).toBeVisible();
+  await expect(button(page, 'Undo')).toBeEnabled();
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toBe('Remove this screenshot and all its marks?');
+    await dialog.accept();
+  });
+  await remove.click();
+  await expect(add(page)).toBeFocused();
+  await expect(message(page)).toHaveValue(draft);
+  await add(page).click();
   await button(page, 'Save screenshot').click();
   await expect(preview(page)).toBeVisible();
   await button(page, 'Remove').click();
   await expect(add(page)).toBeFocused();
   await expect(preview(page)).toHaveCount(0);
+  await expect(page.getByText('Preview a screenshot on this device. Only your written feedback is sent.')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('mktdemo.feedback'))).toBeNull();
 });
 
+test('backdrop and body-focused Escape preserve marks and the draft', async ({page}) => {
+  await withFixedCapture(page);
+  await openFeedback(page);
+  await add(page).click();
+  await tap(page, .5, .5, page.viewportSize().width === 390);
+  await page.evaluate(() => document.activeElement.blur());
+  const marked = await pixels(page);
+  await page.mouse.click(5, 5);
+  await expect(page.locator('body')).toBeFocused();
+  await page.keyboard.press('Escape');
+  expect(await pixels(page)).toBe(marked);
+  await expect(button(page, 'Undo')).toBeEnabled();
+  await button(page, 'Cancel').click();
+  await expect(message(page)).toHaveValue(draft);
+});
+
 test('shows the masked opening page after typing and scrolling', async ({page}) => {
-  await page.goto('./?theme=a#/other');
+  await page.goto('./' + previewQuery + '#/other');
   const field = page.locator('#o-new');
   await field.fill('PRIVATE SAMPLE FIELD');
   await field.evaluate(el => scrollTo(0, scrollY + el.getBoundingClientRect().top - 130));
@@ -225,6 +303,7 @@ test('shows the masked opening page after typing and scrolling', async ({page}) 
   await page.evaluate(() => scrollTo(0, 0));
   await add(page).click();
   await expect(surface(page)).toBeVisible();
+  if (width === 390) expect((await surface(page).boundingBox()).width).toBeGreaterThanOrEqual(320);
   await button(page, 'Save screenshot').click();
   const size = await preview(page).evaluate(async el => { await el.decode(); return [el.naturalWidth, el.naturalHeight]; });
   expect(size[0] / size[1]).toBeCloseTo(width / height, 2);
@@ -237,7 +316,7 @@ test('shows the masked opening page after typing and scrolling', async ({page}) 
 test('a refused staff capture leaves text feedback available and loads no editor', async ({page}) => {
   const assets = [];
   page.on('request', request => assets.push(request.url()));
-  await openFeedback(page, '#/staff?show=all');
+  await openFeedback(page, './' + previewQuery + '#/staff?show=all');
   await add(page).click();
   await expect(page.getByRole('status')).toContainText('You can still send text feedback.');
   await expect(add(page)).toBeFocused();
@@ -248,16 +327,28 @@ test('a refused staff capture leaves text feedback available and loads no editor
   await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
 });
 
-const expectedHomePayload = '{"type":"feedback","message":"Sample: add a <label> & keep the colors.","name":"","page":"“What do you need?”","route":"#/","theme":"a"}';
-
-test('text-only feedback matches main byte for byte', async ({page}) => {
-  const requests = [];
-  page.on('request', request => requests.push(request));
-  await openFeedback(page);
-  const posted = page.waitForRequest(relay);
-  await button(page, 'Save feedback').click();
-  expect((await posted).postData()).toBe(expectedHomePayload);
-  await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
-  expect(requests.filter(request => request.url() === relay)).toHaveLength(1);
-  expect(requests.some(request => request.url().endsWith('/feedback-markup.js'))).toBe(false);
-});
+for (const publicHost of [false, true]) {
+  test(`text-only feedback matches main byte for byte (${publicHost ? 'public host with flag' : 'local default'})`, async ({page, baseURL}) => {
+    const requests = [];
+    page.on('request', request => requests.push(request));
+    let path = './?theme=a#/';
+    if (publicHost) {
+      // Serve this checkout under a non-loopback origin without reaching Pages or DNS.
+      await page.route('http://preview.invalid/**', async route => {
+        const {pathname, search} = new URL(route.request().url());
+        const response = await route.fetch({url:new URL(pathname + search, baseURL).href});
+        await route.fulfill({response});
+      });
+      path = 'http://preview.invalid/' + previewQuery + '#/';
+    }
+    await openFeedback(page, path);
+    await expect(page.getByLabel('What do you like? What would you change?', {exact:true})).toBeVisible();
+    await expect(add(page)).toHaveCount(0);
+    const posted = page.waitForRequest(relay);
+    await button(page, 'Save feedback').click();
+    expect((await posted).postDataBuffer()).toEqual(expectedHomePayload);
+    await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
+    expect(requests.filter(request => request.url() === relay)).toHaveLength(1);
+    expect(requests.some(request => request.url().endsWith('/feedback-markup.js'))).toBe(false);
+  });
+}

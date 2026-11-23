@@ -49,6 +49,8 @@ export const memoryNote = 'Browser storage is unavailable. Feedback changes last
 
 export function openFeedback(opener) {
   const forgetCapture = rememberCapture();
+  const markupEnabled = ['localhost', '127.0.0.1'].includes(location.hostname) &&
+    new URLSearchParams(location.search).get('feedback-markup') === '1';
   feedbackStyles();
   const body = h('div', {class:'feedback-body'});
   const route = location.hash || '#/';
@@ -73,6 +75,7 @@ export function openFeedback(opener) {
     const types = chips('feedback-type', 'Type', TYPES.map(t => [t,t]), type, value => { type = value; });
     types.querySelector('input').required = true;
     const screenshot = h('div', {class:'feedback-screenshot'});
+    const screenshotHint = h('p', {class:'hint'}, 'Preview a screenshot on this device. Only your written feedback is sent.');
     const screenshotStatus = h('p', {class:'hint', role:'status'});
     const add = h('button', {type:'button', class:'btn', onclick:async () => {
       if (add.getAttribute('aria-disabled') === 'true') return;
@@ -92,16 +95,16 @@ export function openFeedback(opener) {
     }}, 'Add page screenshot');
     function showPreview(jpeg, width, height) {
       const remove = h('button', {type:'button', class:'btn', onclick:() => {
-        screenshot.replaceChildren(add, screenshotStatus);
+        screenshot.replaceChildren(screenshotHint, add, screenshotStatus);
         add.focus();
       }}, 'Remove');
-      screenshot.replaceChildren(h('p', {class:'hint'}, 'Screenshot preview. This demo sends text only.'),
+      screenshot.replaceChildren(h('p', {class:'hint'}, 'Screenshot preview for this device.'),
         remove, h('img', {src:jpeg, width, height, alt:'Marked-up page screenshot preview', onload:() => {
           if (document.activeElement === remove) screenshot.scrollIntoView({block:'start'});
         }}));
       remove.focus();
     }
-    screenshot.append(add, screenshotStatus);
+    screenshot.append(screenshotHint, add, screenshotStatus);
     const save = h('button', {type:'submit', class:'btn primary'}, 'Save feedback');
     const form = h('form', {class:'feedback-form', novalidate:true, onsubmit:async event => {
       event.preventDefault();
@@ -122,9 +125,13 @@ export function openFeedback(opener) {
         const result = await submitFeedback(entry, check.token());
         if (!body.isConnected) return;
         check.remove();
+        const hadScreenshot = markupEnabled && screenshot.querySelector('img');
+        const delivery = hadScreenshot && result.delivery === 'sent'
+          ? 'Your written feedback was sent to the marketing team.' : result.text;
         const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
         body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
-          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, result.text),
+          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
+          hadScreenshot && h('p', {class:'hint'}, 'The screenshot was a preview on this device.'),
           feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
           h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
         thanks.focus();
@@ -135,7 +142,9 @@ export function openFeedback(opener) {
       }
     }}, types, field(message.id, 'What do you like? What would you change?', message), count, error, field(name.id, 'Name (optional)', name),
       field('feedback-from', 'Sent from', h('input', {id:'feedback-from', readonly:true, value:page + ' · ' + route + ' · ' + theme})),
-      screenshot, h('p', {class:'hint'}, 'Saving keeps a browser copy and tries to send this feedback privately to Marketing. Use sample details.'), check.container, save);
+      markupEnabled && screenshot, h('p', {class:'hint'}, markupEnabled
+        ? 'Saving keeps a browser copy of your written feedback and tries to send it privately to Marketing. Use sample details.'
+        : 'Saving keeps a browser copy and tries to send this feedback privately to Marketing. Use sample details.'), check.container, save);
     body.replaceChildren(form);
     check.mount();
     message.focus();

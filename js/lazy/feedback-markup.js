@@ -41,6 +41,7 @@ export function editScreenshot(source, form, opener, onSave) {
     }
     undo.disabled = false;
     render();
+    if (activeNote) input.focus();
   }
 
   function point(event) {
@@ -108,7 +109,9 @@ export function editScreenshot(source, form, opener, onSave) {
     status.textContent = 'Last mark removed.';
     render();
   }}, 'Undo');
-  const remove = h('button', {type:'button', class:'btn', onclick:finish}, 'Remove');
+  const remove = h('button', {type:'button', class:'btn feedback-markup-remove', onclick:() => {
+    if (window.confirm('Remove this screenshot and all its marks?')) finish();
+  }}, 'Remove');
   const save = h('button', {type:'button', class:'btn primary', onclick:() => {
     if (!panel.isConnected) return;
     let jpeg;
@@ -126,10 +129,10 @@ export function editScreenshot(source, form, opener, onSave) {
   }}, 'Save screenshot');
   const panel = h('section', {class:'feedback-markup', 'aria-labelledby':'screenshot-title'},
     h('h3', {id:'screenshot-title'}, 'Mark up your screenshot'),
-    h('div', {class:'feedback-markup-tools', role:'group', 'aria-label':'Screenshot tools'}, tools, undo, remove),
+    h('div', {class:'feedback-markup-tools', role:'group', 'aria-label':'Screenshot tools'}, tools, undo),
     h('p', {class:'hint', id:'screenshot-help'}, 'Tap or drag to mark. With a keyboard, use arrow keys to move and Enter to mark.'),
     surface, noteField, status,
-    h('div', {class:'feedback-markup-tools'}, save, h('button', {type:'button', class:'btn', onclick:finish}, 'Cancel')));
+    h('div', {class:'feedback-markup-actions'}, save, h('button', {type:'button', class:'btn', onclick:finish}, 'Cancel'), remove));
   const wrap = form.closest('.sheet-wrap');
   const events = new AbortController();
 
@@ -140,19 +143,25 @@ export function editScreenshot(source, form, opener, onSave) {
     opener.focus();
   }
 
-  // Dismiss the editor first through the sheet's Close button, backdrop or Escape.
-  function dismiss(event) {
-    event.stopPropagation();
-    finish();
-  }
   const options = {capture:true, signal:events.signal};
   wrap.addEventListener('click', event => {
-    if (event.target === wrap || event.target.closest('#sheet-close')) dismiss(event);
+    if (event.target === wrap) event.stopPropagation();
+    else if (event.target.closest('#sheet-close')) {
+      event.stopPropagation();
+      finish();
+    }
   }, options);
-  wrap.addEventListener('keydown', event => {
+  // Catch Escape even when focus has left the sheet.
+  document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
-    if (event.isComposing) event.stopPropagation();
-    else dismiss(event);
+    event.stopPropagation();
+    if (event.isComposing || event.repeat || !wrap.contains(event.target)) return;
+    if (activeNote) {
+      closeNote();
+      undo.disabled = !marks.length;
+      surface.focus();
+      render();
+    } else finish();
   }, options);
   render();
   form.hidden = true;

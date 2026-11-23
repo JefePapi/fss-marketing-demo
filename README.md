@@ -68,15 +68,23 @@ The latest 200 entries stay in this browser under `mktdemo.feedback`.
 If browser storage fails, the sheet explains that changes last for the current
 page session.
 
-**Add page screenshot** opens the masked page from when Feedback opened.
-Tap or drag to highlight or circle an area. To pin a note, choose **Note**,
-tap a spot, and type sample details. Keyboard users can tab to the screenshot,
-move with arrow keys and press Enter to mark. **Undo** removes the last mark.
-**Save screenshot** shows the flattened JPEG in the form, and **Remove**
-clears the screenshot. **Cancel**, **Close**, and Escape return to the typed
-message while the editor is open. The screenshot stays in memory as a preview.
-The current demo sends text only. If a screenshot is unavailable, keep writing
-and use the same **Save feedback** button.
+### Preview the screenshot editor locally
+
+The editor is off by default while screenshot delivery is pending. From the
+repo, run `python3 -m http.server 4173 --bind 127.0.0.1` and open
+`http://127.0.0.1:4173/?feedback-markup=1#/`. The flag also works on
+`localhost`. Open **Feedback** and choose **Add page screenshot** to preview
+the masked page from when Feedback opened. **Save feedback** sends your
+written feedback. The screenshot preview stays in memory on this device.
+
+Tap or drag to highlight or circle an area. Choose **Note**, tap a spot, and
+type sample details. Keyboard users can tab to the screenshot, move with arrow
+keys, and press Enter to mark. Escape in the note field closes the field and
+keeps the note. **Undo** removes the last mark. **Remove** in the editor asks
+before discarding the screenshot and all marks. **Cancel** and **Close** return
+to your draft. **Save screenshot** shows the flattened JPEG in the form, where
+**Remove** clears the preview. If capture is unavailable, keep writing and
+use **Save feedback**.
 
 In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
 them read or unread, confirm deletion of one entry and download the current
@@ -89,7 +97,7 @@ Managers can submit from their pages. Inbox access follows Notifications.
 **Reset demo data** clears the browser inbox. Published issues live on GitHub.
 
 The form, inbox, model and feedback CSS load on first use. The editor scripts
-load when a visitor adds a screenshot. About, Notifications,
+load on demand in the local preview. About, Notifications,
 Email log and Reports also load on their own routes. `npm run size` reports
 on-demand feedback bytes separately from the initial design budget.
 [Verification and screenshots](docs/FEEDBACK-NOTES.md).
@@ -789,19 +797,20 @@ Totals **16 PASS, 0 FAIL, 1 N/A**.
 | Packages | PASS | Manifests and lockfile match main. Tests use the installed Playwright 1.65.1. |
 | Dependency audit | PASS | `npm audit --json` reports 3 dependencies and zero vulnerabilities. |
 | Secrets and personal data | PASS | The diff adds no credentials or real data. Capture retains the existing masks, and the note field asks for sample details. |
-| Outbound data | PASS | Intercepted POST bodies match main byte for byte. The JPEG remains in browser memory, including when the text is submitted. |
+| Editor rollout | PASS | Local preview requires a loopback host and the explicit query flag. Browser tests cover the local default and a public hostname with the flag set. |
+| Outbound data | PASS | Intercepted POST bodies match a raw POST captured on main. The relay receives written feedback and no JPEG. |
 | Typed text | PASS | Notes use Canvas text drawing. The browser tests check that markup typed into a note produces no HTML element. |
 | CSV formula neutralization | PASS | Formula neutralization tests pass and export code matches main. |
-| File formats | PASS | Browser tests check JPEG markers, decoding and mark pixels. The existing CSV, XLS and ICS checks pass. |
+| File formats | PASS | Browser tests check JPEG markers, decoding and mark pixels. The existing CSV, XLS and ICS checks pass. The phone evidence is a valid 390 × 844 PNG. |
 | CSP, origin, Turnstile and staff guards | PASS | HTML CSP and relay files match main. Existing Turnstile and staff retry tests pass. |
 | Approved artwork and official marks | PASS | The editor uses the existing verified artwork and adds only drawing shapes and text. |
 | Search indexing | PASS | The HTML noindex tags and robots.txt match main. |
 | Demo banner, footer and hooks | PASS | Shell and feedback hooks are preserved. Existing feedback entry-point tests pass. |
 | Controls, uploads and unknown content | PASS | Capture code matches main. A browser test checks the field mask in the flattened JPEG. |
 | Staff and record details | PASS | The existing capture policy and refusal tests pass. The editor handles refusals with a text-only path. |
-| Feedback sheet and keyboard | PASS | Browser tests cover the opening viewport, visible keyboard focus and returning to the draft after dismissing the editor. |
+| Feedback sheet and keyboard | PASS | Browser tests cover the opening viewport, 48 px targets, note focus on pointer release, confirmed Remove, and draft and mark preservation on backdrop taps and body-focused Escape. |
 | Screen sharing | PASS | The editor uses the existing Canvas capture and requests no browser permissions. |
-| Retention and logging | PASS | The JPEG and its marks are held in memory for the current form. The change adds no expiry jobs or image logging. |
+| Retention and logging | PASS | Tests check localStorage, sessionStorage, object URL creation and single JPEG encoding. The editor adds no expiry jobs or image logging. |
 | Production data | N/A | The production check read static files from Pages. |
 
-Totals **17 PASS, 0 FAIL, 1 N/A**.
+Totals **18 PASS, 0 FAIL, 1 N/A**.

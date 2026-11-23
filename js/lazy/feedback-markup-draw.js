@@ -66,7 +66,7 @@ function drawNote(ctx, {start, text}, unit) {
   outline(ctx, '#fff', unit);
 
   if (!text.trim()) return;
-  ctx.font = `600 ${18 * unit}px system-ui, sans-serif`;
+  ctx.font = `600 ${20 * unit}px system-ui, sans-serif`;
   ctx.textBaseline = 'middle';
   const max = 210 * unit;
   const lines = wrapNote(text.trim(), max, line => ctx.measureText(line).width);
