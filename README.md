@@ -722,3 +722,50 @@ Totals **12 PASS, 0 FAIL, 0 N/A**.
 | Browser storage | PASS | The capped inbox saves before POST, preserves read state, handles #12 entries and retains its memory fallback. A pending response updates only an existing row. |
 
 Totals **12 PASS, 0 FAIL, 0 N/A** within the audit scope above.
+
+## Local feedback page capture
+
+When Feedback opens, it records the viewport before mounting the sheet or
+focusing the message box. Later feedback code can import
+`capture()` from `./js/lazy/feedback-capture.js` to read that result. Success
+returns `{ok: true, canvas, viewport}` with a CSS-pixel Canvas 2D image and the
+saved scroll, size, visual offset, public route name and design. Refusals
+return `{ok: false, reason, message}`. Opening Feedback again records a new view.
+
+The canvas uses measured browser boxes and line breaks, selected theme
+styles, fixed labels and approved demo artwork. Controls, uploads, record
+content and unrecognized text are covered with opaque masks. Staff and
+individual record pages, including calendar event details, are refused.
+Pages with substantial unsupported effects or artwork are also refused.
+This can apply to artwork-heavy Home views. Capture leaves minor decorative
+details, such as shadows, out of the reconstruction.
+
+Run `npm run test:parity -- feedback-capture.spec.mjs` to check the scrolled
+390 × 844 and 1280 × 900 form fixtures. The committed PNGs show the real page
+with test-applied masks, before Feedback opens. The tests compare those
+references with the reconstructed canvas and check each wrapped file-limit
+line and the opaque masks independently.
+
+### Security checklist for the feedback page-capture engine (backlog #14)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | Existing guards are intact. The capture policy separately refuses staff mode and staff routes. |
+| Packages | PASS | Dependency manifests and lockfile match main. The tests use installed Playwright. |
+| Dependency audit | PASS | `npm audit --offline` checked the dependency tree and reported zero vulnerabilities. |
+| Secrets and personal data | PASS | Reference images use sample fixtures and mask private content. The engine never reads input values or upload bytes. |
+| Outbound data | PASS | The capture stays in browser memory. Capture adds no outbound data, public URL, storage, or network endpoint. |
+| Typed text | PASS | The engine paints only approved labels into Canvas and masks unknown text. Existing DOM construction continues to use text nodes. |
+| CSV formula neutralization | N/A | Capture does not touch export code or formulas. |
+| File formats | PASS | Capture returns a raster canvas. The tests encode and decode PNG, and the existing export format checks still run. |
+| CSP, origin, Turnstile and staff guards | PASS | The capture hook runs before the sheet. CSP, origin checks, Turnstile and staff permissions match main. |
+| Official marks | PASS | Capture uses the demo's original decorative art. No official marks, seals or logos are added. |
+| Search indexing | PASS | Both HTML documents retain noindex, and robots.txt matches main. |
+| Demo banner, footer and hooks | PASS | The existing shell and test hooks match main. The canvas includes the visible banner and footer. |
+| Controls, uploads and unknown content | PASS | The capture masks controls, file rows, user text and unapproved content with opaque placeholders. |
+| Staff and record details | PASS | The policy rejects staff, staff-side public views and individual records before creating a canvas. |
+| Feedback sheet and keyboard | PASS | Capture measures before the sheet or its focus changes. Canvas only paints page content, so browser chrome is outside the image. |
+| Screen sharing | PASS | Capture uses Canvas 2D and does not invoke `getDisplayMedia`. |
+| Retention and logging | PASS | Capture adds no purge, auto-delete, image logging or token logging. |
+
+Totals **16 PASS, 0 FAIL, 1 N/A**.

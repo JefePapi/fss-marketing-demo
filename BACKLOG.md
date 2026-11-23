@@ -239,6 +239,14 @@ scroll cases reached 58.5–60.0 FPS. Largest initial design
 The work is local and uncommitted because `.git` is read-only.
 [Tests, limitations and measurements](docs/FEEDBACK-NOTES.md#13--shared-feedback-relay-18-nov).
 
+## 14. Feedback page-capture engine — open
+
+Item 1 in Joseph’s 23 Nov feedback capture brief. At main `205a830`,
+the feedback sheet has no capture hook and the history has no capture engine.
+A read-only Pages check matched the feedback module at that commit. Build
+local Canvas reconstruction for public views, with masking and refusal checks. The brief leaves the
+editor, relay, storage and deployment for separate work.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).
