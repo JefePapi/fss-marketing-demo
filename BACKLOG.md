@@ -280,6 +280,24 @@ discovered all 303 main test names plus 48 capture cases, but the sandbox
 blocked loopback before any cases ran on either revision. Item #14 remains
 open for browser verification and PR #1 review.
 
+**Round 3 browser follow-up opened, 23 Nov.** The browser run on `09add8e`
+showed six failures in the two Home references and the tinted-mask case.
+Finish the same round on PR #1. The live Pages feedback module returned
+HTTP 200 and matched `main` byte for byte in a read-only check.
+
+**Round 3 browser follow-up close-out.** Mission Control Home paints its
+computed radial gradients and the SVG validated against its theme generator.
+The Mission Control and Ribbon Glass references now hide the SVG through a
+presentation attribute, and the tinted-mask fixture uses CSS properties that
+take effect under the site's CSP. The first-capture-after-resize-and-scroll
+test passes on desktop and phone-390. The focused run passed 46 tests with
+2 expected skips. Chromium parity passed 331 tests versus 285 on `main`,
+with no failing names. The shim had the same 15 missing-Firefox launch
+failures on both revisions, and all 15 passed on both with the installed
+Firefox. Unit and relay tests passed 74/74 and 9/9. Night Wall Light measured
+219,528 of 220,000 bytes. `js/theme.js` matches `main`. Security checklist
+totals remain 16 PASS, 0 FAIL, 1 N/A. Item #14 is ready for PR #1 review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

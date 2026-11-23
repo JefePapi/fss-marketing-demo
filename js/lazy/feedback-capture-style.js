@@ -61,7 +61,8 @@ function linear(ctx, box, parts, direction) {
 }
 
 function radial(ctx, box, parts, direction, vmax) {
-  const position = direction?.match(/^(?:(?:ellipse )?([\d.]+(?:px|vmax)) ([\d.]+(?:px|vmax))|ellipse) at (.+)$/);
+  // Computed styles can omit the default ellipse keyword before the position.
+  const position = direction?.match(/^(?:(?:ellipse )?([\d.]+(?:px|vmax)) ([\d.]+(?:px|vmax)) |ellipse )?at (.+)$/);
   if (!position) return false;
   const xy = position[3].match(/calc\([^)]+\)|[^ ]+/g);
   if (xy?.length !== 2) return false;
@@ -119,7 +120,7 @@ export function paintBox(ctx, box, style, options = {}) {
     const match = layer.match(/^(linear|radial)-gradient\((.*)\)$/);
     if (!match) { supported = false; continue; }
     const parts = layers(match[2]);
-    const direction = /^(?:[\d.]+(?:deg|px|vmax)|to |ellipse )/.test(parts[0]) ? parts.shift() : undefined;
+    const direction = /^(?:[\d.]+(?:deg|px|vmax)|to |ellipse |at )/.test(parts[0]) ? parts.shift() : undefined;
     try {
       if (match[1] === 'linear' && size === 'auto') linear(ctx, box, parts, direction);
       else if (match[1] === 'linear' && options.art && size === '36px 36px') {

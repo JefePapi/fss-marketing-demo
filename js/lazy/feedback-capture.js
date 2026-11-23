@@ -1,6 +1,6 @@
 import { approvedLabel, captureRoute, DESIGNS, messages } from './feedback-capture-policy.js';
 import { snapshotBoxStyle, paintBox, prepareVector } from './feedback-capture-style.js';
-import { themeHero, themeHomeArt, themeIcon, themeStepArt } from '../theme.js';
+import { themeHero, themeIcon, themeStepArt } from '../theme.js';
 
 const MASK = '#68788a';
 const MAX_EDGE = 1280;
@@ -128,7 +128,6 @@ function measureOpening() {
 
   const isNightWall = theme === 'a' || theme === 'a-light';
   const heroArtSelector = {b:'.hero.hud > .survey > svg.terrain', c:'.hero > .hero-art > svg.ribbon'}[theme];
-  // Import only the active theme, and take the trusted SVG from its generator.
   const heroArt = page === '' && heroArtSelector && app.querySelector(heroArtSelector);
   const posters = new Map();
   const wall = isNightWall && app.querySelector('.route-home > .glass > .hero > .poster-wall');
@@ -233,7 +232,7 @@ function measureOpening() {
     }
 
     let original;
-    if (el === heroArt) original = themeHomeArt();
+    if (el === heroArt) original = themeHero({now:new Date()})?.querySelector(heroArtSelector);
     else if (el.matches('.route-request .step-head > :is(.step-print,.step-art) > svg'))
       original = themeStepArt(Number(el.closest('.step-head').dataset.step))?.firstChild;
     else if (el.matches('.poster > svg')) original = posters.get(el.parentElement)?.firstChild;

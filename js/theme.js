@@ -16,7 +16,6 @@ let art;
 let revision = 0;
 const loadArt = id => import('./themes/' + (id === 'a-light' ? 'a' : id) + '.js');
 export const themeHero = ctx => art?.hero(ctx);
-export const themeHomeArt = () => art?.terrain?.() || art?.ribbon?.('arrival');
 export const themeIcon = route => art?.shortcutIcon?.(route);
 export const themeArrow = () => art?.shortcutArrow?.();
 export const themeStepArt = step => art?.stepArt?.(step);

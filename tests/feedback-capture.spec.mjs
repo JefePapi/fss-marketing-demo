@@ -230,20 +230,33 @@ for (const [theme, name, artSelector] of [
   ['b', 'Mission Control', '.hero .terrain'],
   ['c', 'Ribbon Glass', '.hero .ribbon'],
 ]) {
-  test(`${name} Home artwork matches a browser reference`, async ({page}) => {
-    await page.goto('./?theme=' + theme + '#/');
-    const art = page.locator(artSelector);
-    await expect(art).toBeInViewport();
-    const box = await page.locator('.hero').boundingBox();
-    const options = {mask:[page.locator('#theme-select')], maskColor, scale:'css'};
-    const reference = await page.screenshot(options);
-    const withoutArt = await page.screenshot({...options, style:artSelector + ' { visibility:hidden }'});
-    const result = await openCapture(page);
-    expect(result).toMatchObject({ok:true,viewport:{page:'home',theme,scrollY:0}});
-    const fidelity = await imageComparison(page, result.png, reference, {box,withoutArt});
-    expect(fidelity.different).toBeLessThan(.18);
-    expect(fidelity.referenceInk).toBeGreaterThan(100);
-    expect(fidelity.matchedInk).toBeGreaterThan(.60);
+  test.describe(() => {
+    // The terrain's fine strokes are visible at device resolution on a phone.
+    const density = 1.5;
+    test.use({deviceScaleFactor:density});
+
+    test(`${name} Home artwork matches a browser reference`, async ({page}) => {
+      await page.goto('./?theme=' + theme + '#/');
+      const art = page.locator(artSelector);
+      await expect(art).toBeInViewport();
+      const phone = page.viewportSize().width === 390;
+      const scale = phone ? density : 1; // Desktop capture reaches the 1,280 px cap.
+      const hero = await page.locator('.hero').boundingBox();
+      const box = {x:hero.x * scale, y:hero.y * scale, width:hero.width * scale, height:hero.height * scale};
+      const options = {mask:[page.locator('#theme-select')], maskColor, scale:phone ? 'device' : 'css'};
+      const reference = await page.screenshot(options);
+      // The SVG presentation attribute works under the app's CSP and keeps layout fixed.
+      await art.evaluate(svg => svg.setAttribute('visibility', 'hidden'));
+      await expect(art).toHaveCSS('visibility', 'hidden');
+      const withoutArt = await page.screenshot(options);
+      await art.evaluate(svg => svg.removeAttribute('visibility'));
+      const {png, ...result} = await openCapture(page);
+      expect(result).toMatchObject({ok:true,viewport:{page:'home',theme,scrollY:0}});
+      const fidelity = await imageComparison(page, png, reference, {box,withoutArt});
+      expect(fidelity.different).toBeLessThan(.18);
+      expect(fidelity.referenceInk).toBeGreaterThan(100);
+      expect(fidelity.matchedInk).toBeGreaterThan(.60);
+    });
   });
 
   test(`An extra live path inside ${name} Home artwork is never painted`, async ({page}) => {
@@ -424,12 +437,19 @@ test('A translucent overlay does not conceal a mostly masked preview', async ({p
   await expect(page.locator('#app h1')).toBeVisible();
   await page.evaluate(async () => {
     const {h} = await import('./js/ui.js');
-    const geometry = 'position:fixed;top:20%;left:0;width:100%;height:60%;pointer-events:none;';
-    const mask = h('unknown-preview-panel', {style:geometry + 'z-index:50'});
-    const tint = h('div', {style:geometry + 'z-index:51;background:rgba(4,20,80,.5)'});
+    const geometry = {position:'fixed', top:'20%', left:'0', width:'100%', height:'60%', pointerEvents:'none'};
+    const mask = h('unknown-preview-panel');
+    const tint = h('div', {id:'capture-fixture-tint'});
+    Object.assign(mask.style, geometry, {zIndex:'50'});
+    Object.assign(tint.style, geometry, {zIndex:'51', backgroundColor:'rgba(4,20,80,.5)'});
     document.querySelector('#app').append(mask,tint);
   });
-  expect(await openCapture(page)).toMatchObject({ok:false,reason:'misleading-preview',png:undefined});
+  const tint = page.locator('#capture-fixture-tint');
+  await expect(tint).toHaveCSS('background-color', 'rgba(4, 20, 80, 0.5)');
+  expect((await tint.boundingBox()).height).toBeGreaterThan(page.viewportSize().height * .50);
+  const {png, ...result} = await openCapture(page);
+  expect(result).toMatchObject({ok:false,reason:'misleading-preview'});
+  expect(png).toBeUndefined();
 });
 
 test('The public month keeps its heading, weekdays and day numbers', async ({page}) => {

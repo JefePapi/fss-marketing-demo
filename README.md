@@ -752,7 +752,8 @@ The tests compare the reconstruction with browser screenshots from before
 Feedback opens. They check form masks and visible file-limit lines
 independently, and compare the first capture after a keyboard-sized resize
 and backdrop scroll with the opening view. Mission Control and Ribbon Glass
-Home references are taken during the test, with and without the artwork.
+Home references are taken during the test, with and without the visible SVG
+artwork. The phone comparison uses device-resolution pixels for fine strokes.
 
 ### Security checklist for the feedback page-capture engine (backlog #14)
 
@@ -760,7 +761,7 @@ Home references are taken during the test, with and without the artwork.
 |---|---|---|
 | Login and permission guards | PASS | Existing guards are intact. The capture policy separately refuses staff mode and staff routes. |
 | Packages | PASS | Dependency manifests and lockfile match main. The tests use installed Playwright. |
-| Dependency audit | PASS | The independent round-2 tester ran `npm audit --json` online at `9af9697` against the same lockfile. Its reported counts were 0 info, 0 low, 0 moderate, 0 high and 0 critical across 3 locked development packages. |
+| Dependency audit | PASS | Round 3 ran `npm audit --json` against the registry and the unchanged lockfile. The audit reported 3 packages and 0 vulnerabilities at every severity. |
 | Secrets and personal data | PASS | Reference images use sample fixtures and mask private content. The engine never reads input values or upload bytes. |
 | Outbound data | PASS | The capture stays in browser memory. Capture adds no outbound data, public URL, storage, or network endpoint. |
 | Typed text | PASS | The engine paints only approved labels into Canvas and masks unknown text. Existing DOM construction continues to use text nodes. |
