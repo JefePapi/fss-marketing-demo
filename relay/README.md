@@ -26,6 +26,31 @@ excerpt of the first line. The message uses a fenced text block. Labels are
 `feedback` plus the lowercase type, deduplicated. IP addresses, limiter
 keys and check tokens are excluded from issues.
 
+### Screenshot validation (Worker version 5)
+
+Text-only clients continue to send `application/json` with a cap of 8,192
+UTF-8 bytes. The local preview marks its optional image request as
+`application/json; screenshot=jpeg` and adds the entry `id` and a base64
+`screenshot` field. The marker selects the 368,640-byte body cap before any
+body reads, and the JSON must contain the matching screenshot field. Both
+limits count actual streamed bytes. The Worker cancels the stream at the
+first byte over the cap regardless of Content-Length.
+
+The JPEG may be up to 262,144 bytes and 1,280 pixels on either edge. The
+Worker checks markers, segments, baseline or progressive frame and scan
+headers, and scan framing. The browser also checks that the flattened image
+decodes before preview. The browser strips optional metadata emitted by its
+canvas encoder, including color profiles. The Worker rejects images with
+EXIF/GPS, XMP, ICC, comments or other optional metadata. Only the standard
+thumbnail-free JFIF application header is allowed. Rejection keeps
+untrusted metadata out without rewriting JPEGs in the Worker.
+
+Image attempts can use up to one sender slot per minute and ten slots per
+hour across all senders, within the existing shared ceilings of five and 30.
+Image-specific denials leave the shared slots available for text. Size,
+format and capacity errors offer **Send text only** in the editor. Accepted
+JPEGs are discarded. The only GitHub write is the usual text issue.
+
 ## Deployment and activation
 
 The existing deployment uploaded `worker.js` as an ES module through a

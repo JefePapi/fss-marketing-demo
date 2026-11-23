@@ -12,17 +12,25 @@ export function relayResult(status, body) {
   return {delivery:'local', text:'Saved in this browser. ' + reason};
 }
 
-export async function postFeedback(entry, token) {
+export async function postFeedback(entry, token, screenshot) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const {type, message, name, page, route, theme} = entry;
     const response = await fetch(FEEDBACK_RELAY_URL, {
       method:'POST', mode:'cors', credentials:'omit', referrerPolicy:'no-referrer', redirect:'error',
-      headers:{'Content-Type':'application/json'}, signal:controller.signal,
+      headers:{'Content-Type':screenshot ? 'application/json; screenshot=jpeg' : 'application/json'},
+      signal:controller.signal,
       body:JSON.stringify({type:type.toLowerCase(), message, name, page:page.slice(0, 200),
-        route:route.slice(0, 200), theme, ...(token && {turnstileToken:token})}),
+        route:route.slice(0, 200), theme, ...(token && {turnstileToken:token}),
+        ...(screenshot && {id:entry.id, screenshot})}),
     });
+    if (screenshot && [413, 422, 429].includes(response.status)) {
+      const screenshotError = response.status === 413 ? 'This screenshot is too large.'
+        : response.status === 429 ? 'Screenshots are busy right now.'
+        : 'Could not read this screenshot.';
+      return {delivery:'local', screenshotError};
+    }
     return relayResult(response.status, response.ok ? await response.json() : null);
   } catch {
     return relayResult(0);

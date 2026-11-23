@@ -330,6 +330,26 @@ mutation and the double-save mutation were caught. Night Wall Light stayed
 at 219,528 initial bytes. Checklist totals are 18 PASS, 0 FAIL and 1 N/A.
 Round 1 is ready for review on PR #2.
 
+## 16. Feedback screenshot caps and validation — verified on branch
+
+Item 3 in the 23 Nov screenshot feedback brief. The branch starts at
+`5211f46`, the current `origin/main`. The live Pages feedback module matches
+that commit, and the relay reports version 4. The editor is loopback-only,
+sends text alone, and the relay has no bounded streaming or JPEG validation.
+Add the caps and text fallback. The relay still creates only the text issue.
+
+**Close-out (24 Nov).** The relay caps the streamed body at 8,192 bytes for
+text or 368,640 bytes for an image. It checks JPEG structure, rejects optional
+metadata, and caps the JPEG at 262,144 bytes and 1,280 pixels on the longest
+edge. It discards accepted images and reserves text capacity through a
+separate image allowance. The editor stays loopback-only and preserves the
+draft for **Send text only**. Public text POSTs match the captured fixture.
+Unit passed 77/77 on both revisions. Relay passed 41/41 vs 9/9. Official
+browser parity passed 409 vs 391 with the same five skips and no failing
+names. All 40 JavaScript files passed syntax checks. Night Wall Light
+measured 219,528 initial bytes on both revisions. Checklist totals are
+19 PASS, 0 FAIL, 1 N/A. Ready for PR review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

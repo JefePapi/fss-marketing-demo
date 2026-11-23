@@ -4,12 +4,15 @@
 // Secrets (Worker secrets, never in code): GITHUB_TOKEN, TURNSTILE_SECRET.
 // Nothing about the sender is logged. The IP is only hashed into a rate-limit key.
 import { DurableObject } from 'cloudflare:workers';
-const VERSION = 4;
+const VERSION = 5;
 const ORIGIN = 'https://jefepapi.github.io';
 const REPO = 'JefePapi/fss-demo-feedback';
 const TYPES = { feedback: 'Feedback', suggestion: 'Suggestion', bug: 'Bug' };
 const THEMES = new Set(['a', 'a-light', 'b', 'c', 'current']);
 const MAX_BODY = 8192;
+const MAX_IMAGE_BODY = 360 * 1024;
+const MAX_JPEG = 256 * 1024;
+const MAX_EDGE = 1280;
 const LIMITS = { message: 2000, name: 60, page: 200, route: 200, token: 2048 };
 
 const cors = {
@@ -89,6 +92,157 @@ async function ipKey(request) {
   return [...new Uint8Array(hash)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function readBody(body, cap) {
+  if (!body) return '';
+  const reader = body.getReader();
+  const bytes = new Uint8Array(cap);
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return new TextDecoder().decode(bytes.subarray(0, size));
+      if (value.byteLength > cap - size) {
+        void reader.cancel().catch(() => {});
+        return null;
+      }
+      bytes.set(value, size);
+      size += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+const word = (bytes, offset) => bytes[offset] * 256 + bytes[offset + 1];
+
+function jpegTables(bytes, start, end, huffman, tables) {
+  for (let offset = start; offset < end;) {
+    const selector = bytes[offset++];
+    const kind = selector >> 4;
+    const id = selector & 15;
+    if (kind > 1 || id > 3) return false;
+    if (huffman) {
+      if (offset + 16 > end) return false;
+      let symbols = 0;
+      let available = 1;
+      for (let i = 0; i < 16; i++) {
+        const count = bytes[offset++];
+        symbols += count;
+        available = available * 2 - count;
+        if (available <= 0) return false;
+      }
+      if (!symbols || symbols > 256) return false;
+      offset += symbols;
+    } else {
+      offset += kind ? 128 : 64;
+    }
+    if (offset > end) return false;
+    tables.add(huffman ? kind * 4 + id : id);
+  }
+  return start < end;
+}
+
+// Check the JPEG container and scan framing without decoding pixels.
+function jpegStructure(bytes) {
+  if (word(bytes, 0) !== 0xffd8 || word(bytes, bytes.length - 2) !== 0xffd9) return 'invalid';
+  const quant = new Set(), huffman = new Set(), components = new Map(), scanned = new Set();
+  let progressive, restart = 0;
+  for (let offset = 2; offset < bytes.length;) {
+    if (bytes[offset++] !== 0xff) return 'invalid';
+    while (bytes[offset] === 0xff) offset++;
+    const marker = bytes[offset++];
+    if (marker === 0xd9)
+      return offset === bytes.length && components.size && scanned.size === components.size ? '' : 'invalid';
+    const length = word(bytes, offset);
+    const start = offset + 2;
+    const end = offset + length;
+    if (!(length >= 2 && end <= bytes.length)) return 'invalid';
+    offset = end;
+
+    if (marker === 0xe0) {
+      // Ordinary, thumbnail-free JFIF header directly after SOI.
+      if (start !== 6 || length !== 16 || word(bytes, start) !== 0x4a46 ||
+          word(bytes, start + 2) !== 0x4946 || word(bytes, start + 4) !== 1 ||
+          bytes[start + 6] > 2 || bytes[start + 7] > 2 || !word(bytes, start + 8) ||
+          !word(bytes, start + 10) || word(bytes, start + 12) !== 0) return 'metadata';
+    } else if ((marker >= 0xe1 && marker <= 0xef) || marker === 0xfe) {
+      return 'metadata';
+    } else if (marker === 0xc0 || marker === 0xc2) {
+      const height = word(bytes, start + 1), width = word(bytes, start + 3), count = bytes[start + 5];
+      if (components.size || bytes[start] !== 8 || !width || !height ||
+          count < 1 || count > 4 || length !== 8 + 3 * count) return 'invalid';
+      if (width > MAX_EDGE || height > MAX_EDGE) return 'large';
+      progressive = marker === 0xc2;
+      for (let i = start + 6; i < end; i += 3) {
+        const id = bytes[i], sampling = bytes[i + 1], table = bytes[i + 2];
+        const horizontal = sampling >> 4, vertical = sampling & 15;
+        if (components.has(id) || horizontal < 1 || horizontal > 4 ||
+            vertical < 1 || vertical > 4 || table > 3) return 'invalid';
+        components.set(id, table);
+      }
+    } else if (marker === 0xdb || marker === 0xc4) {
+      if (!jpegTables(bytes, start, end, marker === 0xc4, marker === 0xc4 ? huffman : quant)) return 'invalid';
+    } else if (marker === 0xdd && length === 4) {
+      restart = word(bytes, start);
+    } else if (marker === 0xda) {
+      const count = bytes[start];
+      if (!count || count > components.size || length !== 6 + 2 * count) return 'invalid';
+      const first = bytes[end - 3], last = bytes[end - 2];
+      const high = bytes[end - 1] >> 4, low = bytes[end - 1] & 15;
+      if (progressive ? first > last || last > 63 || (first ? count !== 1 : last !== 0) ||
+          low > 13 || (high && high !== low + 1) : first !== 0 || last !== 63 || high || low) return 'invalid';
+      const scan = new Set();
+      for (let i = start + 1; i < end - 3; i += 2) {
+        const id = bytes[i], dc = bytes[i + 1] >> 4, ac = bytes[i + 1] & 15;
+        const firstScan = !first && !high;
+        if (firstScan ? scanned.has(id) : !scanned.has(id)) return 'invalid';
+        if (scan.has(id) || !quant.has(components.get(id)) ||
+            dc > 3 || ac > 3 || (firstScan && !huffman.has(dc)) ||
+            ((!progressive || first) && !huffman.has(ac + 4))) return 'invalid';
+        scan.add(id);
+        if (firstScan) scanned.add(id);
+      }
+      // Inside a scan, FF 00 is a data byte. Only restart markers may interrupt it.
+      let nextRestart = 0;
+      let hasData = false;
+      while (offset < bytes.length) {
+        const markerStart = bytes.indexOf(0xff, offset);
+        if (markerStart < 0) return 'invalid';
+        hasData ||= markerStart > offset;
+        offset = markerStart + 1;
+        while (bytes[offset] === 0xff) offset++;
+        const code = bytes[offset];
+        if (code === 0 && offset === markerStart + 1) {
+          hasData = true;
+          offset++;
+        } else if (restart && code === 0xd0 + nextRestart && hasData) {
+          nextRestart = (nextRestart + 1) % 8;
+          hasData = false;
+          offset++;
+        } else {
+          offset = markerStart;
+          break;
+        }
+      }
+      if (!hasData) return 'invalid';
+    } else {
+      return 'invalid';
+    }
+  }
+  return 'invalid';
+}
+
+function jpegProblem(encoded) {
+  if (typeof encoded !== 'string' || !encoded || encoded.length % 4 || /\s/.test(encoded)) return 'invalid';
+  if (encoded.length > Math.ceil(MAX_JPEG / 3) * 4) return 'large';
+  let binary;
+  try { binary = atob(encoded); } catch { return 'invalid'; }
+  if (binary.length > MAX_JPEG) return 'large';
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return jpegStructure(bytes);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -100,12 +254,19 @@ export default {
     if (origin !== ORIGIN) return json(403, { ok: false, error: 'Origin not allowed.' }, false);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     if (request.method !== 'POST') return json(405, { ok: false, error: 'Use POST.' });
-    if (!(request.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json')) return json(415, { ok: false, error: 'Send JSON.' });
-    const length = Number(request.headers.get('Content-Length') || 0);
-    if (length > MAX_BODY) return json(413, { ok: false, error: 'Too large.' });
+    const contentType = (request.headers.get('Content-Type') || '').toLowerCase();
+    if (!contentType.startsWith('application/json')) return json(415, { ok: false, error: 'Send JSON.' });
+    const image = /;\s*screenshot=jpeg\s*(?:;|$)/.test(contentType);
 
     const key = await ipKey(request);
     const limiter = name => env.LIMITER.get(env.LIMITER.idFromName(name));
+    // Image attempts share the normal limits and can use at most one slot per
+    // sender per minute and ten slots across senders per hour.
+    if (image && !(localLimit('image:' + key, Date.now(), 1) && (env.LIMITER
+      ? await limiter('image:' + key).hit(1) && await limiter('image:global').hit(10, 3_600_000)
+      : localLimit('image:global', Date.now(), 10, 3_600_000)))) {
+      return json(429, { ok: false, error: 'Screenshots are busy right now. Send text only.' });
+    }
     const allowed = localLimit(key) && (!env.LIMITER || (await limiter(key).hit() && await limiter('global').hit(30, 3_600_000)))
       && (!env.RATE_LIMIT || (await env.RATE_LIMIT.limit({ key })).success);
     if (!allowed) return json(429, { ok: false, error: 'Too many messages. Please wait a minute and try again.' });
@@ -113,12 +274,23 @@ export default {
       return json(503, { ok: false, error: 'not configured', detail: 'Shared feedback is not switched on yet. Your message is saved in this browser.' });
     }
 
-    const raw = await request.text();
-    if (raw.length > MAX_BODY) return json(413, { ok: false, error: 'Too large.' });
+    let raw;
+    try { raw = await readBody(request.body, image ? MAX_IMAGE_BODY : MAX_BODY); }
+    catch { return json(400, { ok: false, error: 'Could not read the request.' }); }
+    if (raw === null) return json(413, { ok: false, error: image ? 'This screenshot is too large. Send text only.' : 'Too large.' });
     let input; try { input = JSON.parse(raw); } catch { return json(400, { ok: false, error: 'Invalid JSON.' }); }
+    if (image !== Boolean(input && Object.hasOwn(input, 'screenshot')))
+      return json(422, { ok: false, error: 'Could not read this screenshot. Send text only.' });
     const { value, error } = validate(input);
     if (error) return json(400, { ok: false, error });
     if (!value.token) return json(400, { ok: false, error: 'Please complete the check.' });
+
+    if (image) {
+      const problem = jpegProblem(input.screenshot);
+      if (problem === 'large') return json(413, { ok: false, error: 'This screenshot is too large. Send text only.' });
+      if (problem === 'metadata') return json(422, { ok: false, error: 'This screenshot contains extra information. Send text only.' });
+      if (problem) return json(422, { ok: false, error: 'Could not read this screenshot. Send text only.' });
+    }
 
     const form = new FormData();
     form.append('secret', env.TURNSTILE_SECRET);
