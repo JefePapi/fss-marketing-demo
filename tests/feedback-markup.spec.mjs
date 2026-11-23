@@ -327,19 +327,24 @@ test('a refused staff capture leaves text feedback available and loads no editor
   await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
 });
 
+async function routeLocalCheckout(page, baseURL, origin) {
+  // Serve this checkout under the test origin without reaching Pages or DNS.
+  await page.route(`${origin}/**`, async route => {
+    const {pathname, search} = new URL(route.request().url());
+    const response = await route.fetch({url:new URL(pathname + search, baseURL).href});
+    await route.fulfill({response});
+  });
+}
+
 for (const publicHost of [false, true]) {
   test(`text-only feedback matches main byte for byte (${publicHost ? 'public host with flag' : 'local default'})`, async ({page, baseURL}) => {
     const requests = [];
     page.on('request', request => requests.push(request));
     let path = './?theme=a#/';
     if (publicHost) {
-      // Serve this checkout under a non-loopback origin without reaching Pages or DNS.
-      await page.route('http://preview.invalid/**', async route => {
-        const {pathname, search} = new URL(route.request().url());
-        const response = await route.fetch({url:new URL(pathname + search, baseURL).href});
-        await route.fulfill({response});
-      });
-      path = 'http://preview.invalid/' + previewQuery + '#/';
+      const origin = 'http://preview.invalid';
+      await routeLocalCheckout(page, baseURL, origin);
+      path = origin + '/' + previewQuery + '#/';
     }
     await openFeedback(page, path);
     await expect(page.getByLabel('What do you like? What would you change?', {exact:true})).toBeVisible();
@@ -352,3 +357,30 @@ for (const publicHost of [false, true]) {
     expect(requests.some(request => request.url().endsWith('/feedback-markup.js'))).toBe(false);
   });
 }
+
+const blockedMarkupURLs = [
+  'http://localhost.evil.com/?feedback-markup=1#/',
+  'http://evil-localhost.com/?feedback-markup=1#/',
+  'http://127.0.0.1.nip.io/?feedback-markup=1#/',
+  'http://localhost./?feedback-markup=1#/',
+  'http://preview.localhost/?feedback-markup=1#/',
+  'http://localhost/#/?feedback-markup=1',
+];
+
+for (const url of blockedMarkupURLs) {
+  test(`screenshot editor stays off at ${url}`, async ({page, baseURL}) => {
+    const assets = [];
+    page.on('request', request => assets.push(new URL(request.url()).pathname));
+    await routeLocalCheckout(page, baseURL, new URL(url).origin);
+    await openFeedback(page, url);
+    await expect(add(page)).toHaveCount(0);
+    expect(assets.some(path => path.endsWith('/feedback-markup.js'))).toBe(false);
+  });
+}
+
+test('screenshot editor is available on localhost with the query flag', async ({page, baseURL}) => {
+  const origin = 'http://localhost';
+  await routeLocalCheckout(page, baseURL, origin);
+  await openFeedback(page, `${origin}/?feedback-markup=1#/`);
+  await expect(add(page)).toBeVisible();
+});
