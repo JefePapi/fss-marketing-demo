@@ -15,6 +15,7 @@ export function relayResult(status, body) {
 export async function postFeedback(entry, token, screenshot) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
+  const screenshotFailure = {delivery:'local', screenshotError:'Could not send this screenshot.'};
   try {
     const {type, message, name, page, route, theme} = entry;
     const response = await fetch(FEEDBACK_RELAY_URL, {
@@ -31,9 +32,10 @@ export async function postFeedback(entry, token, screenshot) {
         : 'Could not read this screenshot.';
       return {delivery:'local', screenshotError};
     }
-    return relayResult(response.status, response.ok ? await response.json() : null);
+    const result = relayResult(response.status, response.ok ? await response.json() : null);
+    return screenshot && result.delivery !== 'sent' ? screenshotFailure : result;
   } catch {
-    return relayResult(0);
+    return screenshot ? screenshotFailure : relayResult(0);
   } finally {
     clearTimeout(timeout);
   }
@@ -73,6 +75,11 @@ export function feedbackCheck() {
       } catch {
         container.textContent = 'The check could not load. You can still save feedback.';
       }
+    },
+    reset() {
+      token = '';
+      // The preceding send may already have used this token.
+      try { if (id != null) window.turnstile.reset(id); } catch { /* The draft can still be saved locally. */ }
     },
     remove() {
       closed = true;

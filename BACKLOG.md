@@ -350,6 +350,25 @@ names. All 40 JavaScript files passed syntax checks. Night Wall Light
 measured 219,528 initial bytes on both revisions. Checklist totals are
 19 PASS, 0 FAIL, 1 N/A. Ready for PR review.
 
+**Round 1 of 3 opened (24 Nov).** The PR #3 review reproduced image attempts
+spending text slots, oversized text spending a slot, and failed image sends
+without a text fallback. The relay charges image attempts before Turnstile
+and the suite misses a skipped image challenge. Fix these five findings on
+the existing branch. The live Pages client matches main at `5211f46`, and
+the live relay reports version 4.
+
+**Round 1 close-out.** Image requests use their own buckets after Turnstile.
+Oversized text returns 413 before the limiter. Any failed image send keeps the
+draft and offers **Send text only**. A failed check on a valid JPEG returns
+403 with zero GitHub issue calls. The supplied repro confirmed all five
+sender and 30 global text slots after image traffic.
+Unit passed 77/77 on both revisions. Relay passed 44/44 vs 9/9. Official
+browser parity passed 421 vs 391 with the same five skips and no failing
+names. All 68 JavaScript files passed syntax checks on both revisions.
+Night Wall Light stayed at 219,528 initial bytes. All five mutations failed
+their suites and were restored. Checklist totals are 19 PASS, 0 FAIL, 1 N/A.
+Ready for Tester re-review on PR #3.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

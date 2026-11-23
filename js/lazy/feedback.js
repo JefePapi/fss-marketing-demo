@@ -141,6 +141,7 @@ export function openFeedback(opener) {
         const result = await submitFeedback(draft, check.token(), screenshotJpeg);
         if (!body.isConnected) return;
         if (result.screenshotError) {
+          check.reset();
           save.disabled = false;
           save.removeAttribute('aria-busy');
           screenshotButton.disabled = false;

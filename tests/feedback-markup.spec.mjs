@@ -261,22 +261,52 @@ for (const problem of ['unreadable', 'oversized']) {
   });
 }
 
-for (const [status, reason] of [[413, 'This screenshot is too large.'],
-  [422, 'Could not read this screenshot.'], [429, 'Screenshots are busy right now.']]) {
-  test(`relay ${status} lets the visitor send the same draft as text only`, async ({page}) => {
+for (const [failure, reason = 'Could not send this screenshot.'] of [
+  [413, 'This screenshot is too large.'],
+  [422, 'Could not read this screenshot.'],
+  [429, 'Screenshots are busy right now.'],
+  [500],
+  ['Worker CPU error'],
+  ['network error'],
+  ['timeout'],
+]) {
+  test(`relay ${failure} lets the visitor send the same draft as text only`, async ({page}) => {
     await withFixedCapture(page);
+    // Model a token already used by a send that failed after verification.
+    if (failure === 500) await page.route(widget, route => route.fulfill({
+      contentType:'text/javascript',
+      body:`let complete;
+        window.turnstile = {
+          render(container, options) {
+            complete = options.callback;
+            complete('sample-image-check');
+            container.textContent = 'Sample check ready';
+            return 1;
+          },
+          reset() { complete('sample-text-check'); },
+          remove() {},
+        };`,
+    }));
     const requests = [];
     await page.route(relay, route => {
       const request = route.request();
       requests.push(request);
-      return request.postDataJSON().screenshot ? route.fulfill({status, json:{ok:false}})
-        : route.fulfill({status:201, json:{ok:true, number:12}});
+      if (!request.postDataJSON().screenshot) return route.fulfill({status:201, json:{ok:true, number:12}});
+      if (failure === 'network error') return route.abort('failed');
+      if (failure === 'timeout') return; // Leave the image POST pending for the client's AbortController.
+      if (failure === 'Worker CPU error') return route.fulfill({status:503, contentType:'text/html', body:'Error 1102'});
+      return route.fulfill({status:failure, json:{ok:false}});
     });
     await openFeedback(page);
+    if (failure === 500) await expect(page.getByText('Sample check ready')).toBeVisible();
     await add(page).click();
     await button(page, 'Save screenshot').click();
     await expect(preview(page)).toBeVisible();
+    if (failure === 'timeout') await page.clock.install();
+    const imagePost = page.waitForRequest(relay);
     await button(page, 'Save feedback').click();
+    await imagePost;
+    if (failure === 'timeout') await page.clock.fastForward(10_000);
     await expect(page.getByRole('status')).toContainText(reason);
     const fallback = button(page, 'Send text only');
     await expect(fallback).toBeFocused();
@@ -284,13 +314,15 @@ for (const [status, reason] of [[413, 'This screenshot is too large.'],
     await expect(preview(page)).toHaveCount(0);
     expect(requests).toHaveLength(1);
     const originalId = requests[0].postDataJSON().id;
+    if (failure === 500) expect(requests[0].postDataJSON().turnstileToken).toBe('sample-image-check');
     const updatedDraft = draft + ' Sample follow-up.';
     await message(page).fill(updatedDraft);
     await fallback.click();
     await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
     expect(requests).toHaveLength(2);
     expect(requests[1].headers()['content-type']).toBe('application/json');
-    expect(requests[1].postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), message:updatedDraft});
+    expect(requests[1].postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), message:updatedDraft,
+      ...(failure === 500 && {turnstileToken:'sample-text-check'})});
     const entries = await page.evaluate(() => JSON.parse(localStorage.getItem('mktdemo.feedback')));
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({id:originalId, message:updatedDraft, delivery:'sent', issue:12});

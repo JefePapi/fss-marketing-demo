@@ -15,8 +15,9 @@ addresses by their first four hextets (/64), and hashes the resulting key.
 A SQLite-backed `RateLimiter` Durable Object keeps timestamps for up to
 5 attempts per minute per key. Another object enforces 30 attempts per hour
 across all senders. Alarms clear inactive counters. A per-isolate window and
-the `RATE_LIMIT` binding provide additional checks. The limiter runs before
-secret and message checks, so unsuccessful attempts also count.
+the `RATE_LIMIT` binding provide additional checks. The text limiter runs
+after the body cap and before secret and message checks, so unsuccessful
+in-cap attempts also count.
 
 The Worker verifies the Turnstile response with Cloudflare and requires
 the verified hostname to equal `jefepapi.github.io`. The issue contains
@@ -45,11 +46,12 @@ EXIF/GPS, XMP, ICC, comments or other optional metadata. Only the standard
 thumbnail-free JFIF application header is allowed. Rejection keeps
 untrusted metadata out without rewriting JPEGs in the Worker.
 
-Image attempts can use up to one sender slot per minute and ten slots per
-hour across all senders, within the existing shared ceilings of five and 30.
-Image-specific denials leave the shared slots available for text. Size,
-format and capacity errors offer **Send text only** in the editor. Accepted
-JPEGs are discarded. The only GitHub write is the usual text issue.
+Verified image attempts have separate buckets for one sender slot per minute
+and ten slots per hour across all senders. The Worker charges these buckets
+after Turnstile passes. Image requests leave the full text allowance available.
+Any failed image send offers **Send text only** in the editor and keeps the
+draft. Accepted JPEGs are discarded. The only GitHub write is the usual text
+issue.
 
 ## Deployment and activation
 

@@ -258,26 +258,22 @@ export default {
     if (!contentType.startsWith('application/json')) return json(415, { ok: false, error: 'Send JSON.' });
     const image = /;\s*screenshot=jpeg\s*(?:;|$)/.test(contentType);
 
-    const key = await ipKey(request);
-    const limiter = name => env.LIMITER.get(env.LIMITER.idFromName(name));
-    // Image attempts share the normal limits and can use at most one slot per
-    // sender per minute and ten slots across senders per hour.
-    if (image && !(localLimit('image:' + key, Date.now(), 1) && (env.LIMITER
-      ? await limiter('image:' + key).hit(1) && await limiter('image:global').hit(10, 3_600_000)
-      : localLimit('image:global', Date.now(), 10, 3_600_000)))) {
-      return json(429, { ok: false, error: 'Screenshots are busy right now. Send text only.' });
-    }
-    const allowed = localLimit(key) && (!env.LIMITER || (await limiter(key).hit() && await limiter('global').hit(30, 3_600_000)))
-      && (!env.RATE_LIMIT || (await env.RATE_LIMIT.limit({ key })).success);
-    if (!allowed) return json(429, { ok: false, error: 'Too many messages. Please wait a minute and try again.' });
-    if (!env.GITHUB_TOKEN || !env.TURNSTILE_SECRET) {
-      return json(503, { ok: false, error: 'not configured', detail: 'Shared feedback is not switched on yet. Your message is saved in this browser.' });
-    }
-
     let raw;
     try { raw = await readBody(request.body, image ? MAX_IMAGE_BODY : MAX_BODY); }
     catch { return json(400, { ok: false, error: 'Could not read the request.' }); }
     if (raw === null) return json(413, { ok: false, error: image ? 'This screenshot is too large. Send text only.' : 'Too large.' });
+
+    const key = await ipKey(request);
+    const limiter = name => env.LIMITER.get(env.LIMITER.idFromName(name));
+    if (!image) {
+      const allowed = localLimit(key) && (!env.LIMITER || (await limiter(key).hit() && await limiter('global').hit(30, 3_600_000)))
+        && (!env.RATE_LIMIT || (await env.RATE_LIMIT.limit({ key })).success);
+      if (!allowed) return json(429, { ok: false, error: 'Too many messages. Please wait a minute and try again.' });
+    }
+    if (!env.GITHUB_TOKEN || !env.TURNSTILE_SECRET) {
+      return json(503, { ok: false, error: 'not configured', detail: 'Shared feedback is not switched on yet. Your message is saved in this browser.' });
+    }
+
     let input; try { input = JSON.parse(raw); } catch { return json(400, { ok: false, error: 'Invalid JSON.' }); }
     if (image !== Boolean(input && Object.hasOwn(input, 'screenshot')))
       return json(422, { ok: false, error: 'Could not read this screenshot. Send text only.' });
@@ -298,6 +294,13 @@ export default {
     const verify = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form });
     const outcome = await verify.json().catch(() => ({}));
     if (!outcome.success || outcome.hostname !== 'jefepapi.github.io') return json(403, { ok: false, error: 'The check failed. Please try again.' });
+
+    // Verified images have their own sender and global limits.
+    if (image && !(localLimit('image:' + key, Date.now(), 1) && (env.LIMITER
+      ? await limiter('image:' + key).hit(1) && await limiter('image:global').hit(10, 3_600_000)
+      : localLimit('image:global', Date.now(), 10, 3_600_000)))) {
+      return json(429, { ok: false, error: 'Screenshots are busy right now. Send text only.' });
+    }
 
     const issue = issueFor(value);
     const gh = await fetch(`https://api.github.com/repos/${REPO}/issues`, {

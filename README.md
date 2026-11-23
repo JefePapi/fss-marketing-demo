@@ -87,8 +87,8 @@ keeps the note. **Undo** removes the last mark. **Remove** in the editor asks
 before discarding the screenshot and all marks. **Cancel** and **Close** return
 to your draft. **Save screenshot** shows the flattened JPEG in the form, where
 **Remove** clears the preview. If the screenshot is unavailable, unreadable,
-too large, or the relay is too busy to take it, use **Send text only**.
-The form keeps your draft. The screenshot may be up to 1,280 pixels on its
+too large, or fails to send, use **Send text only**. The form keeps your draft.
+The screenshot may be up to 1,280 pixels on its
 longest edge and 256 KiB as a JPEG.
 
 In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
@@ -833,16 +833,16 @@ Totals **18 PASS, 0 FAIL, 1 N/A**.
 | Typed text | PASS | The form uses DOM text nodes. Screenshot notes are painted on canvas, and Markdown escaping still applies to written feedback. |
 | CSV formula neutralization | PASS | The existing export safety tests pass. |
 | File formats | PASS | Relay tests cover baseline and progressive JPEGs, malformed segments, metadata and cap boundaries. Browser JPEGs pass the Worker checks with downstream services stubbed. JSON, CSV, XLS and ICS checks pass. |
-| CSP, origin, Turnstile and staff guards | PASS | The HTML shells and relay CORS policy match main. Existing Turnstile and Staff retry tests pass. |
+| CSP, origin, Turnstile and staff guards | PASS | The HTML shells and relay CORS policy match main. A valid JPEG with a failed Turnstile check returns 403 with zero issue calls. Staff retry tests pass. |
 | Approved artwork and official marks | PASS | The renderer uses the existing approved artwork and masks. |
 | Search indexing | PASS | Both HTML documents retain noindex and robots.txt matches main. |
 | Demo banner, footer and hooks | PASS | The existing shell and stable hooks remain in place. |
 | Controls, uploads and unknown content | PASS | Capture continues to mask fields, uploads and unknown content. A browser test checks the flattened field mask. |
 | Staff and record details | PASS | Capture still refuses staff and record-detail views. The Staff refusal test can send text. |
-| Feedback sheet and keyboard | PASS | Official browser tests cover draft preservation, mobile tap targets and focus on the text fallback. |
+| Feedback sheet and keyboard | PASS | Official browser tests cover draft preservation and focus after timeouts, network failures and relay errors. The text retry uses a fresh check token. |
 | Screen sharing | PASS | The editor continues to use local Canvas 2D. |
 | Retention and logging | PASS | The JPEG stays in tab memory until submit, and the relay discards it. Browser storage, GitHub issues and logs contain no screenshot. |
-| Request and rate limits | PASS | The Worker stops reading at the first excess byte. Image attempts can consume up to one of five sender slots per minute and ten of 30 global slots per hour. |
+| Request and rate limits | PASS | Over-cap text returns 413 before the limiter. Images use separate buckets after Turnstile passes. Tests confirm the full five sender and 30 global text slots remain available after image traffic. |
 | Production data | N/A | Production checks used GET for the site module and relay status. |
 
 Totals **19 PASS, 0 FAIL, 1 N/A**.

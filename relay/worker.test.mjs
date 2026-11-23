@@ -42,10 +42,10 @@ const testEnv = {
   LIMITER: { idFromName: name => name, get: () => ({ hit: async () => true }) },
 };
 
-function stubExternal(t) {
-  return t.mock.method(globalThis, 'fetch', async url => {
+function stubExternal(t, verify = () => ({ success: true, hostname: new URL(O).hostname })) {
+  return t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
-      return Response.json({ success: true, hostname: 'jefepapi.github.io' });
+      return Response.json(verify(options.body.get('response')));
     assert.equal(url, 'https://api.github.com/repos/JefePapi/fss-demo-feedback/issues');
     return Response.json({ number: 7 }, { status: 201 });
   }).mock;
@@ -196,9 +196,9 @@ test('a rejected JPEG still allows text from the same sender', async t => {
   assert.equal(upstream.callCount(), 2);
 });
 
-test('image admission preserves capacity for text across the same sender and all senders', async t => {
-  const upstream = stubExternal(t);
+function rateLimits() {
   const hits = new Map();
+  const textBinding = [];
   const env = { ...testEnv, LIMITER: { idFromName: name => name, get: name => ({
     async hit(limit = 5) {
       const count = (hits.get(name) || 0) + 1;
@@ -206,19 +206,78 @@ test('image admission preserves capacity for text across the same sender and all
       hits.set(name, count);
       return true;
     },
-  }) } };
-  const sendImage = ip => worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT, ip }), env);
-  const ip = 'sample-image-sender';
-  assert.equal((await sendImage(ip)).status, 201);
-  assert.equal((await sendImage(ip)).status, 429);
+  }) }, RATE_LIMIT: { async limit({ key }) {
+    textBinding.push(key);
+    return { success: true };
+  } } };
+  return { env, hits, textBinding };
+}
+
+test('image attempts leave all sender and global text slots available', async t => {
+  stubExternal(t);
+  const { env, hits, textBinding } = rateLimits();
+  const sendImage = (ip, options) => worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT, ip, ...options }), env);
+  const sendText = ip => worker.fetch(req({ body: textFields, ip }), env);
+  const accepted = 'sample-image-accepted';
+  const oversized = 'sample-image-oversized';
+  const invalid = 'sample-image-invalid';
+  const busySender = 'sample-image-busy';
+  assert.equal((await sendImage(oversized, { raw: ' '.repeat(368641) })).status, 413);
+  assert.equal((await sendImage(invalid, { body: imageBody(Buffer.from('not a JPEG')) })).status, 422);
+  assert.equal((await sendImage(accepted)).status, 201);
+  assert.equal((await sendImage(accepted)).status, 429);
   for (let i = 0; i < 9; i++) assert.equal((await sendImage('sample-image-sender-' + i)).status, 201);
-  const busy = await sendImage('sample-image-busy');
+  const busy = await sendImage(busySender);
   assert.equal(busy.status, 429);
   assert.match((await busy.json()).error, /Send text only/);
-  assert.equal(upstream.callCount(), 20);
-  assert.equal(hits.get('global'), 10);
-  assert.equal((await worker.fetch(req({ body: textFields, ip }), env)).status, 201);
-  assert.equal((await worker.fetch(req({ body: textFields, ip: 'sample-image-busy' }), env)).status, 201);
-  assert.equal(hits.get('global'), 12);
-  assert.equal(upstream.callCount(), 24);
+  assert.equal(hits.get('image:global'), 10);
+  assert.ok([...hits.keys()].every(key => key.startsWith('image:')));
+  assert.equal(textBinding.length, 0);
+  for (const ip of [accepted, oversized, invalid, busySender]) {
+    for (let i = 0; i < 5; i++) assert.equal((await sendText(ip)).status, 201);
+    assert.equal((await sendText(ip)).status, 429);
+  }
+  for (let i = 0; i < 10; i++) assert.equal((await sendText('sample-text-sender-' + i)).status, 201);
+  assert.equal(hits.get('global'), 30);
+  assert.equal((await sendText('sample-text-over-global')).status, 429);
+});
+
+test('failed Turnstile on a valid JPEG returns 403 without creating an issue', async t => {
+  const upstream = stubExternal(t, () => ({ success: false }));
+  const response = await worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT }), testEnv);
+  assert.equal(response.status, 403);
+  assert.deepEqual(upstream.calls.map(call => call.arguments[0]), [
+    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+  ]);
+});
+
+test('oversized text returns 413 without spending sender or global text slots', async t => {
+  const upstream = stubExternal(t);
+  const { env, hits, textBinding } = rateLimits();
+  const ip = 'sample-oversized-text-sender';
+  const body = JSON.stringify(textFields);
+  const raw = body + ' '.repeat(8193 - Buffer.byteLength(body));
+  assert.equal(Buffer.byteLength(raw), 8193);
+  for (const mode of modes) {
+    assert.equal((await worker.fetch(req({ ip, ...transport(raw, mode) }), env)).status, 413);
+  }
+  assert.equal(hits.size, 0);
+  assert.equal(textBinding.length, 0);
+  assert.equal(upstream.callCount(), 0);
+  for (let i = 0; i < 5; i++) assert.equal((await worker.fetch(req({ ip, body: textFields }), env)).status, 201);
+  assert.equal((await worker.fetch(req({ ip, body: textFields }), env)).status, 429);
+  assert.equal(hits.get('global'), 5);
+});
+
+test('image buckets are charged only after Turnstile passes', async t => {
+  stubExternal(t, token => ({ success: token === textFields.turnstileToken, hostname: new URL(O).hostname }));
+  const { env, hits } = rateLimits();
+  const ip = 'sample-image-retry-sender';
+  const body = imageBody(jpegs.wide);
+  const send = fields => worker.fetch(req({ ip, ct: imageCT, body: fields }), env);
+  assert.equal((await send({ ...body, turnstileToken: 'sample-failed-check' })).status, 403);
+  assert.equal(hits.size, 0);
+  assert.equal((await send(body)).status, 201);
+  assert.equal(hits.get('image:global'), 1);
+  assert.equal((await send(body)).status, 429);
 });
