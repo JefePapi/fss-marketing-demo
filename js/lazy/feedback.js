@@ -2,7 +2,7 @@ import { h, field, openSheet, chips, toast } from '../ui.js';
 import { feedbackEntries, writeFeedback, feedbackTemporary, withFeedbackLock } from '../store.js';
 import { TYPES, buildEntry, prependEntry } from './feedback-model.js';
 import { postFeedback, relayResult, feedbackCheck } from './feedback-relay.js';
-import { rememberCapture } from './feedback-capture.js';
+import { capture, rememberCapture } from './feedback-capture.js';
 
 const BACKENDS = {
   local: entry => withFeedbackLock(() => writeFeedback(prependEntry(feedbackEntries(), entry))),
@@ -49,6 +49,8 @@ export const memoryNote = 'Browser storage is unavailable. Feedback changes last
 
 export function openFeedback(opener) {
   const forgetCapture = rememberCapture();
+  const markupEnabled = ['localhost', '127.0.0.1'].includes(location.hostname) &&
+    new URLSearchParams(location.search).get('feedback-markup') === '1';
   feedbackStyles();
   const body = h('div', {class:'feedback-body'});
   const route = location.hash || '#/';
@@ -72,10 +74,41 @@ export function openFeedback(opener) {
     const name = h('input', {id:'feedback-name', maxlength:60, autocomplete:'off'});
     const types = chips('feedback-type', 'Type', TYPES.map(t => [t,t]), type, value => { type = value; });
     types.querySelector('input').required = true;
+    const screenshot = h('div', {class:'feedback-screenshot'});
+    const screenshotHint = h('p', {class:'hint'}, 'Preview a screenshot on this device. Only your written feedback is sent.');
+    const screenshotStatus = h('p', {class:'hint', role:'status'});
+    const add = h('button', {type:'button', class:'btn', onclick:async () => {
+      if (add.getAttribute('aria-disabled') === 'true') return;
+      add.setAttribute('aria-disabled', 'true');
+      screenshotStatus.textContent = '';
+      try {
+        const result = capture();
+        if (result.ok) {
+          const {editScreenshot} = await import('./feedback-markup.js');
+          if (form.isConnected && !save.disabled) editScreenshot(result.canvas, form, add, showPreview);
+          return;
+        }
+        screenshotStatus.textContent = 'A screenshot is unavailable for this page. You can still send text feedback.';
+      } catch {
+        screenshotStatus.textContent = 'Could not add a screenshot. You can still send text feedback.';
+      } finally { add.removeAttribute('aria-disabled'); }
+    }}, 'Add page screenshot');
+    function showPreview(jpeg, width, height) {
+      const remove = h('button', {type:'button', class:'btn', onclick:() => {
+        screenshot.replaceChildren(screenshotHint, add, screenshotStatus);
+        add.focus();
+      }}, 'Remove');
+      screenshot.replaceChildren(h('p', {class:'hint'}, 'Screenshot preview for this device.'),
+        remove, h('img', {src:jpeg, width, height, alt:'Marked-up page screenshot preview', onload:() => {
+          if (document.activeElement === remove) screenshot.scrollIntoView({block:'start'});
+        }}));
+      remove.focus();
+    }
+    screenshot.append(screenshotHint, add, screenshotStatus);
     const save = h('button', {type:'submit', class:'btn primary'}, 'Save feedback');
     const form = h('form', {class:'feedback-form', novalidate:true, onsubmit:async event => {
       event.preventDefault();
-      if (save.disabled) return;
+      if (save.disabled || form.hidden) return;
       if (!message.value.trim()) {
         error.textContent = 'Enter a message.';
         error.hidden = false;
@@ -92,9 +125,13 @@ export function openFeedback(opener) {
         const result = await submitFeedback(entry, check.token());
         if (!body.isConnected) return;
         check.remove();
+        const hadScreenshot = markupEnabled && screenshot.querySelector('img');
+        const delivery = hadScreenshot && result.delivery === 'sent'
+          ? 'Your written feedback was sent to the marketing team.' : result.text;
         const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
         body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
-          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, result.text),
+          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
+          hadScreenshot && h('p', {class:'hint'}, 'The screenshot was a preview on this device.'),
           feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
           h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
         thanks.focus();
@@ -103,9 +140,11 @@ export function openFeedback(opener) {
         save.removeAttribute('aria-busy');
         toast('Could not save feedback. Try again.');
       }
-    }}, types, field(message.id, 'Message', message), count, error, field(name.id, 'Name (optional)', name),
+    }}, types, field(message.id, 'What do you like? What would you change?', message), count, error, field(name.id, 'Name (optional)', name),
       field('feedback-from', 'Sent from', h('input', {id:'feedback-from', readonly:true, value:page + ' · ' + route + ' · ' + theme})),
-      h('p', {class:'hint'}, 'Saving keeps a browser copy and tries to send this feedback privately to Marketing. Use sample details.'), check.container, save);
+      markupEnabled && screenshot, h('p', {class:'hint'}, markupEnabled
+        ? 'Saving keeps a browser copy of your written feedback and tries to send it privately to Marketing. Use sample details.'
+        : 'Saving keeps a browser copy and tries to send this feedback privately to Marketing. Use sample details.'), check.container, save);
     body.replaceChildren(form);
     check.mount();
     message.focus();

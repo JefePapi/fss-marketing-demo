@@ -58,7 +58,7 @@ test('Feedback is lazy, saves locally, and prepares a public issue only on reque
   await expect.poll(() => assets.has('feedback.css')).toBe(true);
   expect(assets.has('feedback.js')).toBe(true);
   expect(assets.has('feedback-staff.js')).toBe(false);
-  const field = page.getByLabel('Message', {exact:true});
+  const field = page.getByLabel('What do you like? What would you change?', {exact:true});
   await page.getByRole('button', {name:'Save feedback'}).click();
   await expect(page.getByText('Enter a message.')).toBeVisible();
   await expect(field).toBeFocused();

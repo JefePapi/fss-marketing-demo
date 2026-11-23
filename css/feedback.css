@@ -40,3 +40,25 @@ html[data-theme=current] .sheet:has(.feedback-body) > .surface { background:#fff
 @media (prefers-reduced-motion:reduce) {
   .feedback-form button[aria-busy=true]::after,.feedback-card button[aria-busy=true]::after { animation:none }
 }
+
+.feedback-screenshot,.feedback-markup { display:grid; justify-items:start; gap:10px; min-width:0 }
+.feedback-screenshot :is(img,p),.feedback-markup p { margin:0 }
+.feedback-screenshot img,.feedback-markup canvas { display:block; max-width:100%; height:auto; max-height:min(43dvh,420px); width:auto }
+.feedback-screenshot img { justify-self:center }
+.feedback-markup-tools,.feedback-markup-actions { display:flex; flex-wrap:wrap; gap:8px }
+.feedback-markup-actions { justify-self:stretch }
+.feedback-markup-remove { margin-inline-start:auto }
+.feedback-markup .field { justify-self:stretch }
+.feedback-screenshot button,.feedback-markup button { min-width:48px; min-height:48px }
+.feedback-markup-tools [aria-pressed=true] { outline:2px solid var(--picker-active); outline-offset:-3px }
+.feedback-markup-surface { justify-self:center; max-width:100%; border:0; padding:0; cursor:crosshair; touch-action:none; background:none }
+.feedback-markup :is(button,input):focus-visible { outline:3px solid var(--picker-active); outline-offset:3px }
+
+@media (max-width:600px) {
+  .feedback-screenshot img,.feedback-markup canvas { width:100%; max-height:none }
+  .feedback-markup-surface { width:100% }
+  .feedback-markup-actions {
+    position:sticky; bottom:0; z-index:1; padding-block:8px;
+    background:var(--picker-paper); border-top:1px solid var(--picker-edge);
+  }
+}
