@@ -1,7 +1,7 @@
 # Marketing request demo — sample data, unofficial
 
 **Unofficial prototype for 52 FSS Marketing review. Not an official Air Force or government site.**
-Every sample event, name and email is made up. Requests stay in the browser. Saving feedback keeps a local copy and tries to send it privately to Marketing. Visitors can also open a public GitHub draft.
+Every sample event, name and email is made up. Requests stay in the browser. Saving feedback keeps a local copy and tries to send it privately to Marketing.
 
 Intended address: `https://jefepapi.github.io/fss-marketing-demo/` (GitHub Pages, repo `fss-marketing-demo`).
 
@@ -59,43 +59,45 @@ from this code budget. See [the #10 verification record](SWITCHER-NOTES.md).
 
 Open **Feedback** in the demo banner or footer on any page. Desktop also has a
 floating button that moves clear of page controls. Choose Feedback, Suggestion
-or Bug, enter a message and optionally add a sample name. **Save feedback**
+or Bug and answer **What do you like? What would you change?** A sample name
+is optional. **Save feedback**
 saves the local copy first, then makes one attempt to send it privately to
 Marketing. The relay receives the type, message, optional sample name, page,
 route and design. The relay POST excludes the local timestamp and read marker.
 The latest 200 entries stay in this browser under `mktdemo.feedback`.
-If browser storage fails, the
-sheet explains that changes last for the current page session.
+If browser storage fails, the sheet explains that changes last for the current
+page session.
 
-To bring a suggestion to Joseph, choose **Also post to GitHub** after saving
-or from a staff inbox row. This opens a public issue draft for
-**JefePapi/fss-marketing-demo** in a new tab. Sign in to GitHub, review the
-prefilled details and choose **Create** there. Opening the draft shares its
-contents with GitHub. The delivery marker tracks only the private relay.
-Long messages may be shortened for the link. **Copy as text** keeps the full
-submission. The repository owner creates the `feedback` label. The issue link
-and the `.github/ISSUE_TEMPLATE/feedback.md` template both request that label.
+**Add page screenshot** opens the masked page from when Feedback opened.
+Tap or drag to highlight or circle an area. To pin a note, choose **Note**,
+tap a spot, and type sample details. Keyboard users can tab to the screenshot,
+move with arrow keys and press Enter to mark. **Undo** removes the last mark.
+**Save screenshot** shows the flattened JPEG in the form, and **Remove**
+clears the screenshot. **Cancel**, **Close**, and Escape return to the typed
+message while the editor is open. The screenshot stays in memory as a preview.
+The current demo sends text only. If a screenshot is unavailable, keep writing
+and use the same **Save feedback** button.
 
 In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
 them read or unread, confirm deletion of one entry and download the current
 filter as CSV. Each entry shows **Sent · #12** (its private issue number)
-or **Only in this browser**. Use **Try sending again** for one manual retry.
+or **Only in this browser**. **Copy as text** copies the full entry. Use
+**Try sending again** for one manual retry.
 Entries saved before the relay was added are eligible too. The Queue badge
 counts unread feedback across all types.
 Managers can submit from their pages. Inbox access follows Notifications.
 **Reset demo data** clears the browser inbox. Published issues live on GitHub.
 
-The form, inbox, model and feedback CSS load on first use. About, Notifications,
+The form, inbox, model and feedback CSS load on first use. The editor scripts
+load when a visitor adds a screenshot. About, Notifications,
 Email log and Reports also load on their own routes. `npm run size` reports
 on-demand feedback bytes separately from the initial design budget.
 [Verification and screenshots](docs/FEEDBACK-NOTES.md).
 
 ### Switch on shared sending
 
-The deployed Cloudflare relay currently awaits configuration. The form
-explains a 503, a rate limit, or a failed send and keeps the public GitHub
-fallback available. Only a successful relay confirmation displays
-**Sent to the marketing team.**
+The form explains a 503, a rate limit, or a failed send. A successful relay
+confirmation displays **Sent to the marketing team.**
 
 Create a Turnstile widget for `jefepapi.github.io` and set its public
 site key in `js/lazy/feedback-relay.js`. Add `TURNSTILE_SECRET` and
@@ -778,3 +780,28 @@ artwork. The phone comparison uses device-resolution pixels for fine strokes.
 | Retention and logging | PASS | Capture adds no purge, auto-delete, image logging or token logging. |
 
 Totals **16 PASS, 0 FAIL, 1 N/A**.
+
+### Security checklist for the feedback screenshot editor (backlog #15)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | Staff and read-only controls match main. Staff capture is refused in the browser tests. |
+| Packages | PASS | Manifests and lockfile match main. Tests use the installed Playwright 1.65.1. |
+| Dependency audit | PASS | `npm audit --json` reports 3 dependencies and zero vulnerabilities. |
+| Secrets and personal data | PASS | The diff adds no credentials or real data. Capture retains the existing masks, and the note field asks for sample details. |
+| Outbound data | PASS | Intercepted POST bodies match main byte for byte. The JPEG remains in browser memory, including when the text is submitted. |
+| Typed text | PASS | Notes use Canvas text drawing. The browser tests check that markup typed into a note produces no HTML element. |
+| CSV formula neutralization | PASS | Formula neutralization tests pass and export code matches main. |
+| File formats | PASS | Browser tests check JPEG markers, decoding and mark pixels. The existing CSV, XLS and ICS checks pass. |
+| CSP, origin, Turnstile and staff guards | PASS | HTML CSP and relay files match main. Existing Turnstile and staff retry tests pass. |
+| Approved artwork and official marks | PASS | The editor uses the existing verified artwork and adds only drawing shapes and text. |
+| Search indexing | PASS | The HTML noindex tags and robots.txt match main. |
+| Demo banner, footer and hooks | PASS | Shell and feedback hooks are preserved. Existing feedback entry-point tests pass. |
+| Controls, uploads and unknown content | PASS | Capture code matches main. A browser test checks the field mask in the flattened JPEG. |
+| Staff and record details | PASS | The existing capture policy and refusal tests pass. The editor handles refusals with a text-only path. |
+| Feedback sheet and keyboard | PASS | Browser tests cover the opening viewport, visible keyboard focus and returning to the draft after dismissing the editor. |
+| Screen sharing | PASS | The editor uses the existing Canvas capture and requests no browser permissions. |
+| Retention and logging | PASS | The JPEG and its marks are held in memory for the current form. The change adds no expiry jobs or image logging. |
+| Production data | N/A | The production check read static files from Pages. |
+
+Totals **17 PASS, 0 FAIL, 1 N/A**.

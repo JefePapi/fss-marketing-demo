@@ -298,6 +298,23 @@ Firefox. Unit and relay tests passed 74/74 and 9/9. Night Wall Light measured
 219,528 of 220,000 bytes. `js/theme.js` matches `main`. Security checklist
 totals remain 16 PASS, 0 FAIL, 1 N/A. Item #14 is ready for PR #1 review.
 
+## 15. Feedback screenshot markup editor — implemented and verified
+
+Item 2 in Joseph’s 23 Nov screenshot feedback brief. Main `d2813fb`
+has a masked capture engine but no editor. A read-only Pages check matched
+the feedback and capture modules to main. Add optional in-sheet markup and an
+in-memory JPEG preview. Keep the text relay and its payload as they are.
+
+**Close-out (23 Nov).** Added the two-question prompt, optional screenshot
+markup with touch and keyboard controls, and a removable JPEG preview. Cancel
+and Close return to the same draft. The browser regression confirmed the same
+text POST bytes on this branch and main. Unit tests passed 77/77 vs 74/74.
+Relay tests passed 9/9 on both revisions. Official Playwright browsers passed
+364 tests vs 346 on main, with the same five skips and no failing test names.
+All 40 JavaScript files passed syntax checks. Night Wall Light remains at
+219,528 of 220,000 initial bytes. Security checklist totals are 17 PASS,
+0 FAIL and 1 N/A. Ready for PR review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).
