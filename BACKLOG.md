@@ -239,6 +239,65 @@ scroll cases reached 58.5–60.0 FPS. Largest initial design
 The work is local and uncommitted because `.git` is read-only.
 [Tests, limitations and measurements](docs/FEEDBACK-NOTES.md#13--shared-feedback-relay-18-nov).
 
+## 14. Feedback page-capture engine — open
+
+Item 1 in Joseph’s 23 Nov feedback capture brief. At main `205a830`,
+the feedback sheet has no capture hook and the history has no capture engine.
+A read-only Pages check matched the feedback module at that commit. Build
+local Canvas reconstruction for public views, with masking and refusal checks. The brief leaves the
+editor, relay, storage and deployment for separate work.
+
+**Round 1 opened, 23 Nov.** The refuter and tester reports on PR #1
+identify Night Wall Home refusal, overly obscured previews, unapproved
+wizard paths and weak browser fidelity assertions. Recheck those cases on
+the existing branch and retain the review's capture-only scope.
+
+**Round 1 close-out.** Night Wall and Night Wall Light Home capture at
+scroll zero on phone and desktop. The engine validates wizard and poster
+SVGs against the theme originals, refuses obscured output and preserves
+public calendar and activity context. Chromium passed all 17 reference
+comparisons. The Night Wall wizard reference failed with its draw removed
+and passed after restoration. Unit cases passed 74/74, relay cases passed
+9/9, and full Chromium parity passed 319 tests versus 285 on main. The same
+15 Firefox cases could not launch on either revision because the executable
+was missing. Security checklist 16 PASS, 0 FAIL, 1 N/A. Item #14 remains open
+for PR #1 review.
+
+**Round 3 opened, 23 Nov.** The review found that the first capture refuses a
+keyboard resize or backdrop scroll, and that Mission Control and Ribbon Glass
+Home lack approved artwork. Fix both on PR #1. Main `205a830` predates the
+engine. The earlier read-only Pages check matched main, and this session's
+Pages request could not resolve the host.
+
+**Round 3 close-out.** Capture measures the opening page, then draws on
+demand after keyboard resize or backdrop scroll. Mission Control and Ribbon
+Glass Home use verified theme originals. Desktop and phone tests cover both
+Home references, added paths, deferred capture and tinted masks. Unit cases
+passed 74/74 against main’s 73/73. Relay passed 9/9 on both. Syntax, PNG and
+size checks passed. Night Wall Light measured 219,608 of 220,000 initial
+bytes. Security checklist totals are 16 PASS, 0 FAIL, 1 N/A. Playwright
+discovered all 303 main test names plus 48 capture cases, but the sandbox
+blocked loopback before any cases ran on either revision. Item #14 remains
+open for browser verification and PR #1 review.
+
+**Round 3 browser follow-up opened, 23 Nov.** The browser run on `09add8e`
+showed six failures in the two Home references and the tinted-mask case.
+Finish the same round on PR #1. The live Pages feedback module returned
+HTTP 200 and matched `main` byte for byte in a read-only check.
+
+**Round 3 browser follow-up close-out.** Mission Control Home paints its
+computed radial gradients and the SVG validated against its theme generator.
+The Mission Control and Ribbon Glass references now hide the SVG through a
+presentation attribute, and the tinted-mask fixture uses CSS properties that
+take effect under the site's CSP. The first-capture-after-resize-and-scroll
+test passes on desktop and phone-390. The focused run passed 46 tests with
+2 expected skips. Chromium parity passed 331 tests versus 285 on `main`,
+with no failing names. The shim had the same 15 missing-Firefox launch
+failures on both revisions, and all 15 passed on both with the installed
+Firefox. Unit and relay tests passed 74/74 and 9/9. Night Wall Light measured
+219,528 of 220,000 bytes. `js/theme.js` matches `main`. Security checklist
+totals remain 16 PASS, 0 FAIL, 1 N/A. Item #14 is ready for PR #1 review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

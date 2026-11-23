@@ -2,6 +2,7 @@ import { h, field, openSheet, chips, toast } from '../ui.js';
 import { feedbackEntries, writeFeedback, feedbackTemporary, withFeedbackLock } from '../store.js';
 import { TYPES, buildEntry, prependEntry } from './feedback-model.js';
 import { postFeedback, relayResult, feedbackCheck } from './feedback-relay.js';
+import { rememberCapture } from './feedback-capture.js';
 
 const BACKENDS = {
   local: entry => withFeedbackLock(() => writeFeedback(prependEntry(feedbackEntries(), entry))),
@@ -47,6 +48,7 @@ export function feedbackStyles() {
 export const memoryNote = 'Browser storage is unavailable. Feedback changes last only until this page closes.';
 
 export function openFeedback(opener) {
+  const forgetCapture = rememberCapture();
   feedbackStyles();
   const body = h('div', {class:'feedback-body'});
   const route = location.hash || '#/';
@@ -108,6 +110,6 @@ export function openFeedback(opener) {
     check.mount();
     message.focus();
   }
-  openSheet('Feedback', body, opener, () => check?.remove());
+  openSheet('Feedback', body, opener, () => { forgetCapture(); check?.remove(); });
   compose();
 }
