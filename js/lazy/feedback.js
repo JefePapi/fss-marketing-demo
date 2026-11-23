@@ -48,7 +48,7 @@ export function feedbackStyles() {
 export const memoryNote = 'Browser storage is unavailable. Feedback changes last only until this page closes.';
 
 export function openFeedback(opener) {
-  rememberCapture();
+  const forgetCapture = rememberCapture();
   feedbackStyles();
   const body = h('div', {class:'feedback-body'});
   const route = location.hash || '#/';
@@ -110,6 +110,6 @@ export function openFeedback(opener) {
     check.mount();
     message.focus();
   }
-  openSheet('Feedback', body, opener, () => check?.remove());
+  openSheet('Feedback', body, opener, () => { forgetCapture(); check?.remove(); });
   compose();
 }

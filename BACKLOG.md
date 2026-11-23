@@ -247,6 +247,22 @@ A read-only Pages check matched the feedback module at that commit. Build
 local Canvas reconstruction for public views, with masking and refusal checks. The brief leaves the
 editor, relay, storage and deployment for separate work.
 
+**Round 1 opened, 23 Nov.** The refuter and tester reports on PR #1
+identify Night Wall Home refusal, overly obscured previews, unapproved
+wizard paths and weak browser fidelity assertions. Recheck those cases on
+the existing branch and retain the review's capture-only scope.
+
+**Round 1 close-out.** Night Wall and Night Wall Light Home capture at
+scroll zero on phone and desktop. The engine validates wizard and poster
+SVGs against the theme originals, refuses obscured output and preserves
+public calendar and activity context. Chromium passed all 17 reference
+comparisons. The Night Wall wizard reference failed with its draw removed
+and passed after restoration. Unit cases passed 74/74, relay cases passed
+9/9, and full Chromium parity passed 319 tests versus 285 on main. The same
+15 Firefox cases could not launch on either revision because the executable
+was missing. Security checklist 16 PASS, 0 FAIL, 1 N/A. Item #14 remains open
+for PR #1 review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

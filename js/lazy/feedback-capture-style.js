@@ -52,8 +52,7 @@ function linear(ctx, box, parts, direction) {
 }
 
 function radial(ctx, box, parts, direction) {
-  // Current's atmosphere uses explicit ellipse sizes and computed coordinates.
-  const position = direction?.match(/^(?:ellipse )?([\d.]+(?:px|vmax)) ([\d.]+(?:px|vmax)) at (.+)$/);
+  const position = direction?.match(/^(?:(?:ellipse )?([\d.]+(?:px|vmax)) ([\d.]+(?:px|vmax))|ellipse) at (.+)$/);
   if (!position) return false;
   const xy = position[3].match(/calc\([^)]+\)|[^ ]+/g);
   if (xy?.length !== 2) return false;
@@ -63,15 +62,17 @@ function radial(ctx, box, parts, direction) {
     const calc = value.match(/^calc\(([\d.]+)% ([+-]) ([\d.]+)px\)$/);
     return calc ? extent(calc[1] + '%', size) + number(calc[3]) * (calc[2] === '+' ? 1 : -1) : extent(value, size);
   };
-  const rx = coordinate(position[1], box.width), ry = coordinate(position[2], box.height);
+  const x = coordinate(xy[0], box.width), y = coordinate(xy[1], box.height);
+  const rx = position[1] ? coordinate(position[1], box.width) : Math.SQRT2 * Math.max(x, box.width - x);
+  const ry = position[2] ? coordinate(position[2], box.height) : Math.SQRT2 * Math.max(y, box.height - y);
   ctx.save();
   try {
-    ctx.translate(box.x + coordinate(xy[0], box.width), box.y + coordinate(xy[1], box.height));
+    ctx.translate(box.x + x, box.y + y);
     ctx.scale(rx, ry);
     const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
     stops(gradient, parts, rx);
     ctx.fillStyle = gradient;
-    ctx.fill();
+    ctx.fillRect(-x / rx, -y / ry, box.width / rx, box.height / ry);
   } finally { ctx.restore(); }
   return true;
 }
@@ -121,14 +122,14 @@ export function paintBox(ctx, box, style, options = {}) {
           else ctx.fillRect(x, y + n, width, 1);
         }
       } else if (match[1] === 'radial' && ((options.dots && size === '20px 20px') ||
-          (options.art && size === '5px 5px'))) {
-        ctx.fillStyle = parts[0].replace(/\s+[\d.]+px$/, '');
+          (options.art && size === '5px 5px') || (options.poster && size === '4px 4px'))) {
+        ctx.fillStyle = parts[0].replace(/\s+[\d.]+px$/, '').replace('currentcolor', style.color);
         const step = number(size);
         const start = value => ((value + step / 2) % step + step) % step;
         for (let py = y + start(options.dots?.y || 0); py < y + height; py += step) {
           for (let px = x + start(options.dots?.x || 0); px < x + width; px += step) {
             ctx.beginPath();
-            ctx.arc(px, py, .85, 0, 2 * Math.PI);
+            ctx.arc(px, py, options.poster ? .65 : .85, 0, 2 * Math.PI);
             ctx.fill();
           }
         }
@@ -154,12 +155,8 @@ export function paintBox(ctx, box, style, options = {}) {
   return supported;
 }
 
-// The wizard illustrations use these SVG primitives. Draw paths as vectors
-// from those fixed artwork slots. Text, embedded images and external
-// resources cannot contribute pixels.
-export function paintStepArt(ctx, svg, viewport) {
-  const matrix = svg.getScreenCTM();
-  if (!matrix) return false;
+// The caller verifies the complete SVG against the theme's original artwork.
+export function paintVector(ctx, svg, matrix) {
   const definitions = new Map([...svg.querySelectorAll('defs [id]')].map(el => [el.id, el]));
   const color = (value, fallback) => {
     const paint = !value || value === 'currentColor' ? fallback : value;
@@ -198,11 +195,11 @@ export function paintStepArt(ctx, svg, viewport) {
           if (definition?.localName === 'linearGradient') {
             const box = node.getBBox();
             if (!box.width || !box.height) continue;
-            ctx.save();
-            ctx.translate(box.x, box.y);
-            ctx.scale(box.width, box.height);
-            paint = ctx.createLinearGradient(0, 0, fraction(definition.getAttribute('x2')), fraction(definition.getAttribute('y2')));
-            ctx.restore();
+            // Convert the SVG's object-bounding-box gradient into user units.
+            const x = fraction(definition.getAttribute('x2')), y = fraction(definition.getAttribute('y2'));
+            const dx = x / box.width, dy = y / box.height;
+            const length = (x*x + y*y) / (dx*dx + dy*dy);
+            paint = ctx.createLinearGradient(box.x, box.y, box.x + dx*length, box.y + dy*length);
             for (const stop of definition.children) {
               const ink = color(stop.getAttribute('stop-color'));
               const opacity = stop.getAttribute('stop-opacity') || '1';
@@ -224,7 +221,7 @@ export function paintStepArt(ctx, svg, viewport) {
   ctx.save();
   try {
     const {a,b,c,d,e,f} = matrix;
-    ctx.transform(a,b,c,d,e - viewport.offsetX,f - viewport.offsetY);
+    ctx.transform(a,b,c,d,e,f);
     for (const child of svg.children) draw(child);
     return true;
   } catch { return false; }

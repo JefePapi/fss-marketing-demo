@@ -1,4 +1,7 @@
 import { limits } from '../files.js';
+import { CAL_STATUS, FACILITIES, SERVICES } from '../config.js';
+import { DAYS, MONTHS } from '../model.js';
+import { holidayMap, sampleAreaNames, sampleEventTitles } from '../seed.js';
 
 // Only public views with a known route can provide a capture.
 const PUBLIC = new Set(['', 'request', 'other', 'status', 'calendar', 'activities', 'about']);
@@ -40,6 +43,7 @@ const labels = {
     'Marketing requests', 'What are you', 'planning?', 'One request covers flyers, the website, Flash magazine and more.',
     'One form for marketing help. We send each part to the right team.', 'Marketing for an event or program',
     'Flyers, social media, the Flash magazine, sponsors, the website and the calendar. Typed once.',
+    '“What do', 'you need?”', 'One request. We’ll send each part to the right team.', '→', '↗',
   ],
   other: [
     "Something that isn't an event", 'Demo: use made-up details. Nothing leaves this browser.',
@@ -63,9 +67,11 @@ const labels = {
   status: ['Check on a request', 'Your request number', 'Your email', 'Check status', 'Try the sample request',
     'Forgot your number?', 'Find my requests'],
   calendar: ['Rolling calendar', 'Read-only', 'Month', 'List', 'Download', 'Copy link for Teams', 'Section',
-    'Service', 'Status', 'Clear filters', '‹ Prev', 'Next ›',
+    'Service', 'Status', 'Clear filters', '‹ Prev', 'Next ›', 'Calendar only', 'Tap a day to see its events.',
+    'Nothing on this day.', 'No events.', 'No events match these filters.', ...SERVICES.map(s => s.short),
+    ...Object.values(CAL_STATUS),
     'Demo: this calendar shows sample events, plus anything added in this browser. In the real system, everyone would see the same live calendar.'],
-  activities: ['Activities'],
+  activities: ['Activities', 'Demo: made-up hours and contact details.'],
   about: ['About this demo', 'What is fake', 'Where the data lives', 'Not in this demo', 'Start over', 'Reset demo data'],
 };
 for (const page in labels) labels[page] = new Set(labels[page]);
@@ -78,14 +84,61 @@ const labelSlots = {
   request: '.step-head, .tray, form > :is(button,.choice), .field > :is(label,.hint), ' +
     '.choices legend, .choicebox:last-of-type label, #step-4 :is(h2,dt,.link)',
   status: 'form > :is(h1,button,#status-example), section > :is(h2,button), .field > label',
-  calendar: '.route-calendar > .glass > .surface > :is(h1,#calendar-note), .tabs, #filters :is(.flabel,label), ' +
-    '#copy-link, #download-toggle, #filter-clear, #month-prev, #month-next',
-  activities: '.route-activities > .glass > h1',
+  calendar: '.route-calendar > .glass > .surface > :is(h1,#calendar-note), .tabs, #filters :is(.flabel,.fchip,label), ' +
+    '#copy-link, #download-toggle, #filter-clear, #month-prev, #month-next, #agenda > p, ' +
+    '#calendar-body :is(.btn.off,.tapnote,.pill,p.sub)',
+  activities: '.route-activities > .glass > :is(h1,p.note)',
   about: '.route-about > .glass > .surface > :is(h1,h2,#reset-demo)',
 };
 
+const weekdays = DAYS.map(day => day.slice(0, 3));
+const shortMonths = MONTHS.map(month => month.slice(0, 3));
+const holidays = new Set(Object.values(holidayMap({start:'2026-01-01',end:'2026-12-31'})));
+const eventTitles = new Set(sampleEventTitles());
+const facilityNames = new Set(FACILITIES.map(item => item.name));
+const areaNames = new Set(sampleAreaNames());
+const hours = /^(?:Closed|\d{2}:\d{2}–\d{2}:\d{2}(?:, \d{2}:\d{2}–\d{2}:\d{2})*)$/;
+
+function calendarLabel(element, text) {
+  if (element.matches('#calendar-body :is(#month-title,.month-banner)'))
+    return MONTHS.includes(text.split(' ')[0]) && /^[A-Za-z]+ \d{4}$/.test(text);
+  if (element.matches('#calendar-body .monthstrip > .mon'))
+    return shortMonths.includes(text.split(' ')[0]) && /^[A-Za-z]+(?: \d{2})?$/.test(text);
+  if (element.matches('#month-head > span')) return weekdays.includes(text);
+  if (element.matches('#month-grid .dnum')) return /^(?:[1-9]|[12]\d|3[01])$/.test(text);
+  if (element.matches('#month-grid .dots')) return /^\d{1,3}$/.test(text);
+  if (element.matches('#month-grid .more')) return /^\+\d{1,3} more$/.test(text);
+  if (element.matches('#calendar-body :is(.holname,.holtag,.holrow)')) return holidays.has(text);
+  if (element.matches('#calendar-body :is(.evchip,.evrow .title)')) return eventTitles.has(text);
+  if (element.matches('#calendar-body :is(.evchip > .t,.evrow .when > .sub)'))
+    return /^(?:All day|Time not set|\d{4}(?:–\d{4})?)$/.test(text);
+  if (element.matches('#calendar-body :is(.evrow .when,.holrow) > strong')) {
+    const [day, number, month] = text.split(' ');
+    return weekdays.includes(day) && /^(?:[1-9]|[12]\d|3[01])$/.test(number) &&
+      shortMonths.includes(month) && text === `${day} ${number} ${month}`;
+  }
+  return false;
+}
+
+function activityLabel(element, text) {
+  const [name] = text.split(' · ');
+  if (element.matches('[data-test=activity-card] > strong'))
+    return facilityNames.has(name) && (text === name || /^.+ · \d{1,2} areas?$/.test(text));
+  if (element.matches('[data-test=activity-card] > span') && text.startsWith('Today: '))
+    return hours.test(text.slice(7));
+  if (element.matches('[data-test=activity-card] > [data-test=list-area]')) {
+    const [area, status] = text.split(' — ');
+    return areaNames.has(area) && (status === 'Closed today' && text === area + ' — ' + status ||
+      text.startsWith(area + ' — Open today ') && hours.test(text.slice(area.length + 14)));
+  }
+  return false;
+}
+
 export function approvedLabel(element, page, text) {
-  if (element.closest('#app')) return labels[page === '' ? 'home' : page]?.has(text) &&
-    !!element.closest(labelSlots[page === '' ? 'home' : page]);
-  return shell.has(text) && !!element.closest('#demo-banner,.site-head,#site-footer,#feedback-open');
+  if (!element.closest('#app'))
+    return shell.has(text) && !!element.closest('#demo-banner,.site-head,#site-footer,#feedback-open');
+  if (page === 'calendar' && calendarLabel(element, text)) return true;
+  if (page === 'activities' && activityLabel(element, text)) return true;
+  const view = page || 'home';
+  return labels[view]?.has(text) && !!element.closest(labelSlots[view]);
 }

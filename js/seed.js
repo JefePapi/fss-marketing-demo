@@ -63,6 +63,8 @@ const DETAILS = {
   web: () => ({ page: 'Events page' }),
 };
 
+export const sampleEventTitles = () => ROWS.map(([title]) => title);
+
 export function buildSeeds(now = new Date()) {
   const y = now.getFullYear(), m = now.getMonth(), today = ymd(now);
   const lastDay = new Date(y, m + 1, 0).getDate();
@@ -161,6 +163,7 @@ const areaSeeds = {
   youth: [['Youth Center','13:00','19:00'],['Before and After School','06:00','18:00',[0,6]],['Youth Sports','15:00','19:00'],['Teen Programs','14:00','20:00']],
   library: [['Library','09:00','18:00']], pet: [['Pet Kennels','07:00','18:00']], lodging: [['Front Desk','00:00','23:59']],
 };
+export const sampleAreaNames = () => Object.values(areaSeeds).flatMap(areas => areas.map(([name]) => name));
 export const slugify = name => name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 export function buildActivities(now = new Date()) {
   const assignments = {fitness:['mgrA'],bowling:['mgrA'],outdoor:['mgrA'],community:['mgrA'],club:['mgrB','mgrC'],library:['mgrB'],arts:['mgrB'],auto:['mgrC'],itt:['mgrC'],youth:['mgrC'],lodging:['mgrD'],pet:['mgrD']};
