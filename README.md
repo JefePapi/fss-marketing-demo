@@ -846,3 +846,33 @@ Totals **18 PASS, 0 FAIL, 1 N/A**.
 | Production data | N/A | Production checks used GET for the site module and relay status. |
 
 Totals **19 PASS, 0 FAIL, 1 N/A**.
+
+### Security checklist for private relay screenshot storage (backlog #17)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | Staff entry and retry guards remain in force. Origin and Turnstile still gate issue creation and receipt lookup. |
+| Packages | PASS | The manifest and lockfile match main. The installed Playwright and Node test harness cover the change. |
+| Dependency audit | PASS | The registry audit reported zero vulnerabilities in three test dependencies. |
+| Secrets and sample data | PASS | Test calls use stubs and sample data. Screenshots and check values stay out of receipts and logs. |
+| Editor rollout | PASS | The editor requires the exact loopback host and query flag. Public-origin tests exercise the gate with the flag on and off. |
+| Outbound data | PASS | The client uses the existing relay and Turnstile endpoints. Retry lookups list issues in the designated repository. The relay uploads JPEG bytes only through that repository's GitHub release-assets endpoint. Redirects are blocked for submission calls to GitHub. |
+| Typed text | PASS | Feedback status uses DOM text. The issue preserves the existing Markdown escaping, and the link uses a fixed URL pattern and a validated issue number. |
+| CSV formula neutralization | PASS | The existing export safety tests pass. |
+| File formats | PASS | Unit and browser tests cover JSON, CSV, XLS and ICS. Relay tests validate JPEG structure, dimensions, byte limits, metadata and the upload response. |
+| CSP and CORS | PASS | Both HTML pages match main byte for byte. The relay's CORS preflight and allowed origin are preserved. |
+| Approved artwork and official marks | PASS | The editor uses the existing capture renderer. Artwork is unchanged. |
+| Search indexing | PASS | Both HTML documents and robots.txt match main. |
+| Demo banner, footer and hooks | PASS | The existing shell and stable hooks pass browser parity. |
+| Controls, uploads and unknown content | PASS | Capture continues to mask fields, uploads and unknown content. Browser tests check the flattened field mask and absence of screenshot bytes from browser storage. |
+| Staff and record details | PASS | Capture still refuses staff and record-detail views. Staff text retry uses the existing guarded inbox. |
+| Feedback sheet and keyboard | PASS | Browser tests cover Escape cleanup, the eight-second check timeout, and recovery through an explicit staff retry. |
+| Screen sharing | PASS | The editor uses local Canvas 2D. |
+| Retention and logging | PASS | GitHub release storage has no expiry or deletion job. Durable receipts hold a lookup start time while pending, then the issue number and outcome. The missing release flag warning is fixed text with no request or credential data. |
+| Repository privacy and link | PASS | Stubbed tests exercise public, internal and unknown visibility, and verify that uploads and links are refused. Successful links target the expected private repository release path. |
+| Partial writes and retries | PASS | Stubbed retries recover explicit rejections, network errors, timeouts, 5xx and unusable creates. An ambiguous create found after a Durable Object restart returns the existing issue. A failed lookup blocks a second create. A delayed link blocks image confirmation. |
+| Request and rate limits | PASS | Body caps and verification order pass the relay tests. Image attempts leave all five sender and 30 global text slots available. The public text POST matches the main fixture byte for byte. |
+| Production data | N/A | Production reads were limited to the public Pages module and relay status. |
+| Live release access and deployment | N/A | Real GitHub release access and production Worker behavior are outside this branch's stubbed verification. |
+
+Totals **21 PASS, 0 FAIL, 2 N/A**.

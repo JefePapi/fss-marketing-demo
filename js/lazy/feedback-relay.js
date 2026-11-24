@@ -3,9 +3,15 @@ import { h } from '../ui.js';
 export const FEEDBACK_RELAY_URL = 'https://fss-demo-feedback.jefepapi.workers.dev/feedback';
 export const TURNSTILE_SITE_KEY = '0x4AAAAAAGHZ9lCct43QwQB_';
 
-export function relayResult(status, body) {
-  if (status >= 200 && status < 300 && body?.ok === true)
-    return {delivery:'sent', issue:body.number, text:'Sent to the marketing team.'};
+export function relayResult(status, body, withScreenshot = false) {
+  if (status >= 200 && status < 300 && body?.ok === true) {
+    const screenshotStatus = body.screenshot === 'attached' ? 'attached'
+      : body.screenshot === 'failed' || withScreenshot ? 'failed' : undefined;
+    const text = screenshotStatus === 'attached' ? 'Your feedback and screenshot were sent to the marketing team.'
+      : screenshotStatus === 'failed' ? 'Your written feedback was sent to the marketing team. We could not confirm your screenshot.'
+      : 'Sent to the marketing team.';
+    return {delivery:'sent', issue:body.number, text, ...(screenshotStatus && {screenshotStatus})};
+  }
   const reason = status === 503 ? "Shared sending isn't switched on yet."
     : status === 429 ? 'Too many messages right now — try again in a minute.'
     : "We couldn't send it right now.";
@@ -14,13 +20,15 @@ export function relayResult(status, body) {
 
 export async function postFeedback(entry, token, screenshot) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), screenshot || entry.imageSubmission ? 20_000 : 10_000);
   const screenshotFailure = {delivery:'local', screenshotError:'Could not send this screenshot.', refreshCheck:true};
   try {
     const {type, message, name, page, route, theme} = entry;
+    const contentType = screenshot ? 'application/json; screenshot=jpeg'
+      : entry.imageSubmission ? `application/json; submission=${entry.id}` : 'application/json';
     const response = await fetch(FEEDBACK_RELAY_URL, {
       method:'POST', mode:'cors', credentials:'omit', referrerPolicy:'no-referrer', redirect:'error',
-      headers:{'Content-Type':screenshot ? 'application/json; screenshot=jpeg' : 'application/json'},
+      headers:{'Content-Type':contentType},
       signal:controller.signal,
       body:JSON.stringify({type:type.toLowerCase(), message, name, page:page.slice(0, 200),
         route:route.slice(0, 200), theme, ...(token && {turnstileToken:token}),
@@ -35,7 +43,7 @@ export async function postFeedback(entry, token, screenshot) {
         (await response.json().catch(() => null))?.checkUsed !== false;
       return {delivery:'local', screenshotError, refreshCheck};
     }
-    const result = relayResult(response.status, response.ok ? await response.json() : null);
+    const result = relayResult(response.status, response.ok ? await response.json() : null, Boolean(screenshot));
     if (screenshot && result.delivery !== 'sent') {
       const refreshCheck = response.status === 403 || response.status >= 500 || response.ok;
       return {...screenshotFailure, refreshCheck};
@@ -64,8 +72,9 @@ function loadTurnstile() {
 // Each open form owns one widget. Ignore a late script load after the sheet closes.
 export function feedbackCheck() {
   const container = TURNSTILE_SITE_KEY && h('div', {class:'feedback-check'});
-  let id, token = '', closed = false, unavailable = !container, resolveReady;
+  let id, token = '', closed = false, unavailable = !container, resolveReady, readyTimer;
   function notifyReady() {
+    clearTimeout(readyTimer);
     resolveReady?.(token);
     resolveReady = undefined;
   }
@@ -79,7 +88,10 @@ export function feedbackCheck() {
     token:() => token,
     waitForToken() {
       if (token || unavailable || closed) return Promise.resolve(token);
-      return new Promise(resolve => { resolveReady = resolve; });
+      return new Promise(resolve => {
+        resolveReady = resolve;
+        readyTimer = setTimeout(notifyReady, 8000);
+      });
     },
     async mount() {
       if (!container) return;

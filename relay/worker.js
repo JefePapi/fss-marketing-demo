@@ -4,9 +4,13 @@
 // Secrets (Worker secrets, never in code): GITHUB_TOKEN, TURNSTILE_SECRET.
 // Nothing about the sender is logged. The IP is only hashed into a rate-limit key.
 import { DurableObject } from 'cloudflare:workers';
-const VERSION = 5;
+const VERSION = 6;
 const ORIGIN = 'https://jefepapi.github.io';
 const REPO = 'JefePapi/fss-demo-feedback';
+const GITHUB = `https://api.github.com/repos/${REPO}`;
+const SCREENSHOT_TAG = 'feedback-screenshots';
+const SCREENSHOT_FAILED = '\n\nScreenshot failed.';
+const SUBMISSION_ID = /^[0-9a-f]{32}$/;
 const TYPES = { feedback: 'Feedback', suggestion: 'Suggestion', bug: 'Bug' };
 const THEMES = new Set(['a', 'a-light', 'b', 'c', 'current']);
 const MAX_BODY = 8192;
@@ -73,8 +77,11 @@ export function localLimit(key, now = Date.now(), limit = 5, windowMs = 60_000, 
   return true;
 }
 
-// Strict per-IP limiter: one tiny SQLite-backed Durable Object per hashed IP (free plan). Stores only timestamps.
+// Limiter objects store only timestamps. Separately named submission objects
+// use the same binding to store a receipt, without using the limiter's alarm.
 export class RateLimiter extends DurableObject {
+  #sending;
+
   async hit(limit = 5, windowMs = 60_000) {
     const now = Date.now();
     const list = ((await this.ctx.storage.get('t')) || []).filter(t => now - t < windowMs);
@@ -84,6 +91,12 @@ export class RateLimiter extends DurableObject {
     return true;
   }
   async alarm() { await this.ctx.storage.deleteAll(); }
+
+  async submit(submission, issue, jpeg) {
+    this.#sending ??= saveSubmission(this.ctx.storage, this.env.GITHUB_TOKEN, submission, issue, jpeg)
+      .finally(() => { this.#sending = undefined; });
+    return this.#sending;
+  }
 }
 
 async function ipKey(request) {
@@ -234,7 +247,7 @@ function jpegStructure(bytes) {
   return 'invalid';
 }
 
-function jpegProblem(encoded) {
+function decodeJpeg(encoded) {
   if (typeof encoded !== 'string' || !encoded || encoded.length % 4 || /\s/.test(encoded)) return 'invalid';
   if (encoded.length > Math.ceil(MAX_JPEG / 3) * 4) return 'large';
   let binary;
@@ -242,7 +255,113 @@ function jpegProblem(encoded) {
   if (binary.length > MAX_JPEG) return 'large';
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
-  return jpegStructure(bytes);
+  return jpegStructure(bytes) || bytes;
+}
+
+const issueUnavailable = 'Could not save to GitHub right now. Your message is saved in this browser.';
+const validNumber = number => Number.isSafeInteger(number) && number > 0;
+const githubHeaders = token => ({ 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'fss-demo-feedback-relay', 'Content-Type': 'application/json' });
+
+function githubClient(token) {
+  const signal = AbortSignal.timeout(8000);
+  return (url, { headers, ...options } = {}) => fetch(url, {
+    ...options, headers: { ...githubHeaders(token), ...headers }, redirect: 'error', signal,
+  });
+}
+
+async function githubJson(response, status, cap = 65_536) {
+  if (response.status !== status) return null;
+  const raw = await readBody(response.body, cap);
+  return raw === null ? null : JSON.parse(raw);
+}
+
+async function findSubmission(github, since, marker) {
+  // List repository issues directly to avoid waiting for the search index.
+  const perPage = 30;
+  const query = new URLSearchParams({ state: 'all', sort: 'created', direction: 'asc', since, per_page: perPage });
+  for (let page = 1; ; page++) {
+    const issues = await githubJson(await github(`${GITHUB}/issues?${query}&page=${page}`), 200, 4 * 1024 * 1024);
+    if (!Array.isArray(issues)) throw new Error('Could not check for an existing feedback issue.');
+    for (const issue of issues) {
+      if (!validNumber(issue?.number) || (issue.body !== null && typeof issue.body !== 'string'))
+        throw new Error('Could not read the feedback issue list.');
+      if (!issue.pull_request && issue.body?.startsWith(marker)) {
+        return { ok: true, number: issue.number, ...(issue.body.endsWith(SCREENSHOT_FAILED) && { screenshot: 'failed' }) };
+      }
+    }
+    if (issues.length < perPage) return null;
+  }
+}
+
+async function attachScreenshot(github, issue, number, jpeg) {
+  const repo = await githubJson(await github(GITHUB), 200);
+  if (repo?.private !== true || repo.visibility !== 'private') return false;
+
+  // The release response can include its full asset list. Use the paginated
+  // endpoint to check the 1,000th slot even if that inline list is incomplete.
+  const release = await githubJson(await github(`${GITHUB}/releases/tags/${SCREENSHOT_TAG}`), 200, 4 * 1024 * 1024);
+  if (!validNumber(release?.id) || release.tag_name !== SCREENSHOT_TAG || release.draft !== false) return false;
+  if (!Object.hasOwn(release, 'immutable')) console.warn('Screenshot skipped: GitHub release response omitted immutable.');
+  if (release.immutable !== false) return false;
+  const assets = await githubJson(await github(`${GITHUB}/releases/${release.id}/assets?per_page=1&page=1000`), 200);
+  if (!Array.isArray(assets) || assets.length) return false;
+
+  const name = `issue-${number}.jpg`;
+  const download = `https://github.com/${REPO}/releases/download/${SCREENSHOT_TAG}/${name}`;
+  const upload = await github(`https://uploads.github.com/repos/${REPO}/releases/${release.id}/assets?name=${name}`, {
+    method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: jpeg,
+  });
+  const asset = await githubJson(upload, 201, 8192);
+  if (!validNumber(asset?.id) || asset.name !== name || asset.state !== 'uploaded' ||
+      asset.content_type !== 'image/jpeg' || asset.size !== jpeg.byteLength || asset.browser_download_url !== download) return false;
+
+  const body = `${issue.body}\n\n[Screenshot (JPEG)](${download})`;
+  const linked = await githubJson(await github(`${GITHUB}/issues/${number}`, {
+    method: 'PATCH', body: JSON.stringify({ body }),
+  }), 200);
+  return linked?.number === number && linked.body === body;
+}
+
+async function saveSubmission(storage, token, submission, issue, jpeg) {
+  const receipt = await storage.get('receipt');
+  if (receipt?.ok) return receipt;
+
+  const marker = `<!-- fss-feedback-submission: ${submission} -->\n\n`;
+  if (receipt) {
+    const found = await findSubmission(githubClient(token), receipt.since, marker);
+    if (found) {
+      await storage.put('receipt', found);
+      return found;
+    }
+  } else {
+    // Reserve before posting. Include a small clock-skew allowance in the lookup window.
+    await storage.put('receipt', { ok: false, since: new Date(Date.now() - 60_000).toISOString() });
+  }
+
+  const markedIssue = { ...issue, body: marker + issue.body };
+  const initialIssue = jpeg ? { ...markedIssue, body: markedIssue.body + SCREENSHOT_FAILED } : markedIssue;
+  const response = await githubClient(token)(`${GITHUB}/issues`, { method: 'POST', body: JSON.stringify(initialIssue) });
+  if ([400, 401, 403, 404, 410, 422, 429].includes(response.status)) {
+    await storage.delete('receipt'); // GitHub explicitly rejected the create.
+    return { ok: false };
+  }
+  const created = await githubJson(response, 201);
+  if (!validNumber(created?.number)) return { ok: false };
+  const result = { ok: true, number: created.number, ...(jpeg && { screenshot: 'failed' }) };
+  await storage.put('receipt', result);
+  if (!jpeg) return result;
+
+  // The original issue already contains the failure note. Replace it only
+  // after a confirmed upload, so an unavailable GitHub still leaves a note.
+  try {
+    if (await attachScreenshot(githubClient(token), markedIssue, created.number, jpeg)) {
+      const attached = { ...result, screenshot: 'attached' };
+      await storage.put('receipt', attached);
+      return attached;
+    }
+  } catch { /* The text issue and its receipt already exist. */ }
+  return result;
 }
 
 export default {
@@ -259,6 +378,7 @@ export default {
     const contentType = (request.headers.get('Content-Type') || '').toLowerCase();
     if (!contentType.startsWith('application/json')) return json(415, { ok: false, error: 'Send JSON.' });
     const image = /;\s*screenshot=jpeg\s*(?:;|$)/.test(contentType);
+    const retry = /;\s*submission=([^;]*)/.exec(contentType);
     const key = await ipKey(request);
     if (image && !localLimit(key, Date.now(), IMAGE_ATTEMPTS_PER_MINUTE, 60_000, recentImageAttempts)) {
       void request.body?.cancel().catch(() => {});
@@ -287,18 +407,26 @@ export default {
     if (error) return json(400, { ok: false, error });
     if (!value.token) return json(400, { ok: false, error: 'Please complete the check.' });
 
+    let jpeg;
     if (image) {
-      const problem = jpegProblem(input.screenshot);
-      if (problem === 'large') return json(413, { ok: false, error: 'This screenshot is too large. Send text only.' });
-      if (problem === 'metadata') return json(422, { ok: false, error: 'This screenshot contains extra information. Send text only.' });
-      if (problem) return json(422, { ok: false, error: 'Could not read this screenshot. Send text only.' });
+      jpeg = decodeJpeg(input.screenshot);
+      if (jpeg === 'large') return json(413, { ok: false, error: 'This screenshot is too large. Send text only.' });
+      if (jpeg === 'metadata') return json(422, { ok: false, error: 'This screenshot contains extra information. Send text only.' });
+      if (jpeg === 'invalid') return json(422, { ok: false, error: 'Could not read this screenshot. Send text only.' });
     }
+
+    const submission = image ? input.id : retry?.[1].trim();
+    if ((image || retry) && (typeof submission !== 'string' || !SUBMISSION_ID.test(submission)))
+      return json(400, { ok: false, error: 'Invalid submission ID.' });
+    if (submission && !env.LIMITER) return json(503, { ok: false, error: 'not configured' });
 
     const form = new FormData();
     form.append('secret', env.TURNSTILE_SECRET);
     form.append('response', value.token);
-    const verify = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body: form });
-    const outcome = await verify.json().catch(() => ({}));
+    const verify = fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST', body: form, ...(submission && { signal: AbortSignal.timeout(5000) }),
+    }).then(response => response.json().catch(() => ({})));
+    const outcome = await (submission ? verify.catch(() => ({})) : verify);
     if (!outcome.success || outcome.hostname !== 'jefepapi.github.io') return json(403, { ok: false, error: 'The check failed. Please try again.' });
 
     // Verified images have their own sender and global limits.
@@ -309,13 +437,14 @@ export default {
     }
 
     const issue = issueFor(value);
-    const gh = await fetch(`https://api.github.com/repos/${REPO}/issues`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${env.GITHUB_TOKEN}`, 'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'fss-demo-feedback-relay', 'Content-Type': 'application/json' },
-      body: JSON.stringify(issue),
+    if (submission) {
+      const result = await limiter('submission:' + submission).submit(submission, issue, jpeg).catch(() => null);
+      return result?.ok ? json(201, result) : json(502, { ok: false, error: issueUnavailable });
+    }
+    const gh = await fetch(`${GITHUB}/issues`, {
+      method: 'POST', headers: githubHeaders(env.GITHUB_TOKEN), body: JSON.stringify(issue),
     });
-    if (gh.status !== 201) return json(502, { ok: false, error: 'Could not save to GitHub right now. Your message is saved in this browser.' });
+    if (gh.status !== 201) return json(502, { ok: false, error: issueUnavailable });
     const created = await gh.json().catch(() => ({}));
     return json(201, { ok: true, number: created.number ?? null });
   },

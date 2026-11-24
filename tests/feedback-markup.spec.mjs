@@ -93,20 +93,19 @@ async function samplePixels(image, points) {
 function runRelay(request) {
   // Use the relay's Node loader in its own process, outside Playwright's loader.
   const stubs = `
-    import assert from 'node:assert/strict';
     import { readFileSync } from 'node:fs';
     import worker from './relay/worker.js';
-    globalThis.fetch = async url => {
-      if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
-        return Response.json({success:true, hostname:'jefepapi.github.io'});
-      assert.equal(url, 'https://api.github.com/repos/JefePapi/fss-demo-feedback/issues');
-      return Response.json({number:12}, {status:201});
-    };
+    import { checkUrl, githubStub, stubLimiter } from './relay/test-support.mjs';
+    const github = githubStub(12);
+    globalThis.fetch = async (url, options) => url === checkUrl
+      ? Response.json({success:true, hostname:'jefepapi.github.io'}) : github(url, options);
+    const env = {GITHUB_TOKEN:'sample-issue-key', TURNSTILE_SECRET:'sample-check-key'};
+    env.LIMITER = stubLimiter(env);
     const result = await worker.fetch(new Request('https://sample.workers.dev/feedback', {
       method:'POST', body:readFileSync(0), headers:{
         Origin:'https://jefepapi.github.io', 'Content-Type':process.argv[1],
       },
-    }), {GITHUB_TOKEN:'sample-issue-key', TURNSTILE_SECRET:'sample-check-key'});
+    }), env);
     console.log(JSON.stringify({status:result.status, json:await result.json()}));
   `;
   return new Promise((resolve, reject) => {
@@ -140,7 +139,7 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
   });
   await withFixedCapture(page);
   await openFeedback(page);
-  await expect(page.getByText('You can add a screenshot. Only your written feedback is kept.')).toBeVisible();
+  await expect(page.getByText('You can add a screenshot for the marketing team.')).toBeVisible();
   const assets = [];
   page.on('request', request => assets.push(new URL(request.url()).pathname));
   await add(page).click();
@@ -221,7 +220,7 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
   await expect(preview(page)).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
   const jpeg = await preview(page).getAttribute('src');
   await expect(preview(page)).toBeInViewport({ratio:.98});
-  await expect(page.getByText('The screenshot will be sent for a check, then discarded.')).toBeVisible();
+  await expect(page.getByText('Your screenshot will be sent privately to the marketing team.')).toBeVisible();
   await expect(button(page, 'Remove')).toBeFocused();
   await expect(button(page, 'Save feedback')).toHaveCount(1);
   const decoded = Buffer.from(jpeg.split(',')[1], 'base64');
@@ -246,8 +245,7 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
     ...JSON.parse(expectedHomePayload), turnstileToken:'sample-check',
     id:JSON.parse(saved)[0].id, screenshot:jpeg.split(',')[1],
   });
-  await expect(page.getByText('Your written feedback was sent to the marketing team.')).toBeVisible();
-  await expect(page.getByText('The screenshot was not kept.')).toBeVisible();
+  await expect(page.getByText('Your feedback and screenshot were sent to the marketing team.')).toBeVisible();
   const {writes, objectURLs} = await page.evaluate(() => ({
     writes:[...window.screenshotWrites, ...Object.values(localStorage), ...Object.values(sessionStorage)],
     objectURLs:window.objectURLs,
@@ -321,7 +319,7 @@ for (const [failure, refresh, reason = 'Could not send this screenshot.'] of [
     const imagePost = page.waitForRequest(relay);
     await button(page, 'Save feedback').click();
     await imagePost;
-    if (failure === 'timeout') await page.clock.fastForward(10_000);
+    if (failure === 'timeout') await page.clock.fastForward(20_000);
     await expect(page.getByRole('status')).toContainText(reason);
     expect(await page.evaluate(() => window.sampleCheckResets)).toBe(refresh ? 1 : 0);
     if (refresh) {
@@ -347,7 +345,7 @@ for (const [failure, refresh, reason = 'Could not send this screenshot.'] of [
     await fallback.click();
     await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
     expect(requests).toHaveLength(2);
-    expect(requests[1].headers()['content-type']).toBe('application/json');
+    expect(requests[1].headers()['content-type']).toBe(`application/json; submission=${originalId}`);
     expect(requests[1].postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), message:updatedDraft,
       turnstileToken:refresh ? 'sample-text-check' : 'sample-image-check'});
     const entries = await page.evaluate(() => JSON.parse(localStorage.getItem('mktdemo.feedback')));
@@ -380,6 +378,78 @@ test('widget error while getting ready saves the draft without a text POST', asy
   expect(entries).toHaveLength(1);
   expect(entries[0]).toMatchObject({id:requests[0].postDataJSON().id, message:updatedDraft, delivery:'local'});
   expect(entries[0]).not.toHaveProperty('screenshot');
+});
+
+for (const screenshot of ['failed', undefined]) {
+  test(`${screenshot ?? 'legacy'} screenshot response confirms only text and hides staff retry`, async ({page}) => {
+    await withFixedCapture(page);
+    await withFeedbackCheck(page);
+    const requests = [];
+    await page.route(relay, route => {
+      requests.push(route.request());
+      return route.fulfill({status:201, json:{ok:true, number:12, screenshot}});
+    });
+    await openFeedback(page);
+    await addScreenshot(page);
+    await button(page, 'Save feedback').click();
+    await expect(page.locator('#feedback-delivery')).toHaveText(
+      'Your written feedback was sent to the marketing team. We could not confirm your screenshot.');
+    await expect(button(page, 'Send text only')).toHaveCount(0);
+    await page.goto('./#/staff');
+    await page.locator('#go-feedback').click();
+    const row = page.locator('[data-test=feedback-entry]');
+    await expect(row).toContainText('Sent · #12');
+    await expect(button(page, 'Try sending again')).toHaveCount(0);
+    expect(requests).toHaveLength(1);
+  });
+}
+
+test('a stalled check saves the draft and staff can retry with the same submission ID', async ({page}) => {
+  await withFixedCapture(page);
+  await withFeedbackCheck(page);
+  const requests = [];
+  await page.route(relay, route => {
+    const request = route.request();
+    requests.push(request);
+    if (request.postDataJSON().screenshot) return route.abort('failed');
+    return route.fulfill({status:201, json:{ok:true, number:12, screenshot:'failed'}});
+  });
+  await openFeedback(page);
+  await expect(page.getByText('Sample check ready')).toBeVisible();
+  await addScreenshot(page);
+  await page.clock.install();
+  await button(page, 'Save feedback').click();
+  await expect(button(page, 'Getting ready...')).toBeDisabled();
+  await page.clock.fastForward(8000);
+  await expect(page.locator('#feedback-delivery')).toContainText('Saved in this browser.');
+  expect(requests).toHaveLength(1);
+  const id = requests[0].postDataJSON().id;
+  await page.goto('./#/staff');
+  await page.locator('#go-feedback').click();
+  await button(page, 'Try sending again').click();
+  await expect(page.getByText('Sample check ready')).toBeVisible();
+  await button(page, 'Send feedback').click();
+  const row = page.locator('[data-test=feedback-entry]');
+  await expect(row).toContainText('Sent · #12');
+  await expect(button(page, 'Try sending again')).toHaveCount(0);
+  expect(requests).toHaveLength(2);
+  expect(requests[1].headers()['content-type']).toBe(`application/json; submission=${id}`);
+  expect(requests[1].postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), turnstileToken:'sample-image-check'});
+});
+
+test('replacing the markup sheet releases its Escape listener', async ({page}) => {
+  await withFixedCapture(page);
+  await openFeedback(page);
+  await add(page).click();
+  await expect(button(page, 'Highlight')).toBeFocused();
+  await page.evaluate(async () => {
+    const {h, openSheet} = await import('./js/ui.js');
+    openSheet('Sample replacement', h('p', {}, 'Sample sheet body.'));
+  });
+  const replacement = page.getByRole('dialog', {name:'Sample replacement'});
+  await expect(replacement).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(replacement).toHaveCount(0);
 });
 
 test('keyboard can select, move, mark, undo and return focus', async ({page}) => {
@@ -462,7 +532,7 @@ test('Cancel, Close and confirmed Remove return to the same unsent form', async 
   await button(page, 'Remove').click();
   await expect(add(page)).toBeFocused();
   await expect(preview(page)).toHaveCount(0);
-  await expect(page.getByText('You can add a screenshot. Only your written feedback is kept.')).toBeVisible();
+  await expect(page.getByText('You can add a screenshot for the marketing team.')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('mktdemo.feedback'))).toBeNull();
 });
 
