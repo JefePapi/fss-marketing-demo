@@ -207,6 +207,7 @@ export function editScreenshot(source, form, opener, onSave, onUnavailable) {
   form.hidden = true;
   form.after(panel);
   tools[0].focus();
+  return events.abort.bind(events);
 }
 
 const clamp = (value, size) => Math.max(0, Math.min(size, value));

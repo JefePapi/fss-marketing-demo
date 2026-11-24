@@ -19,29 +19,32 @@ function sendStored(id, token, allowed, screenshot) {
   return withFeedbackLock(async () => {
     const entry = feedbackEntries().find(e => e.id === id);
     if (!entry || !allowed()) return relayResult(0);
-    if (entry.delivery === 'sent') return relayResult(201, {ok:true, number:entry.issue});
+    if (entry.delivery === 'sent') return relayResult(201,
+      {ok:true, number:entry.issue, screenshot:entry.screenshotStatus}, Boolean(screenshot));
     const result = await postFeedback(entry, token, screenshot);
     if (result.delivery === 'sent' || !entry.delivery) await withFeedbackLock(() => {
       const entries = feedbackEntries();
       if (entries.some(e => e.id === id)) writeFeedback(entries.map(e => e.id === id
-        ? {...e, delivery:result.delivery, issue:result.issue} : e));
+        ? {...e, delivery:result.delivery, issue:result.issue,
+          ...(result.screenshotStatus && {screenshotStatus:result.screenshotStatus})} : e));
     });
     return result;
   }, 'mktdemo.feedback.send.' + id);
 }
 
-function saveDraft(entry) {
+function saveDraft(entry, screenshot) {
   return withFeedbackLock(() => {
     const entries = feedbackEntries();
     const previous = entries.find(e => e.id === entry.id);
-    if (!previous) writeFeedback(prependEntry(entries, entry));
+    const updated = screenshot || previous?.imageSubmission ? {...entry, imageSubmission:true} : entry;
+    if (!previous) writeFeedback(prependEntry(entries, updated));
     else if (previous.delivery === 'local')
-      writeFeedback(entries.map(e => e.id === entry.id ? {...entry, read:e.read} : e));
+      writeFeedback(entries.map(e => e.id === entry.id ? {...updated, read:e.read} : e));
   });
 }
 
 export async function submitFeedback(entry, token, screenshot) {
-  await saveDraft(entry);
+  await saveDraft(entry, screenshot);
   return deliverFeedback(entry.id, token, undefined, screenshot);
 }
 
@@ -61,7 +64,7 @@ export function openFeedback(opener) {
   const route = location.hash || '#/';
   const page = document.querySelector('#app h1')?.innerText.replace(/\s+/g, ' ').trim() || document.title;
 
-  let check;
+  let check, stopMarkup;
   function compose() {
     check = feedbackCheck();
     let type = TYPES[0];
@@ -81,7 +84,7 @@ export function openFeedback(opener) {
     const types = chips('feedback-type', 'Type', TYPES.map(t => [t,t]), type, value => { type = value; });
     types.querySelector('input').required = true;
     const screenshot = h('div', {class:'feedback-screenshot'});
-    const screenshotHint = h('p', {class:'hint'}, 'You can add a screenshot. Only your written feedback is kept.');
+    const screenshotHint = h('p', {class:'hint'}, 'You can add a screenshot for the marketing team.');
     const screenshotStatus = h('p', {class:'hint', role:'status'});
     const add = h('button', {type:'button', class:'btn', onclick:async () => {
       if (save.disabled || add.getAttribute('aria-disabled') === 'true') return;
@@ -91,7 +94,8 @@ export function openFeedback(opener) {
         const result = capture();
         if (result.ok) {
           const {editScreenshot} = await import('./feedback-markup.js');
-          if (form.isConnected && !save.disabled) editScreenshot(result.canvas, form, add, showPreview, sendTextOnly);
+          if (form.isConnected && !save.disabled)
+            stopMarkup = editScreenshot(result.canvas, form, add, showPreview, sendTextOnly);
           return;
         }
         sendTextOnly('A screenshot is unavailable for this page.');
@@ -119,7 +123,7 @@ export function openFeedback(opener) {
         screenshot.replaceChildren(screenshotHint, add, screenshotStatus);
         add.focus();
       }}, 'Remove');
-      screenshot.replaceChildren(h('p', {class:'hint'}, 'The screenshot will be sent for a check, then discarded.'),
+      screenshot.replaceChildren(h('p', {class:'hint'}, 'Your screenshot will be sent privately to the marketing team.'),
         remove, img);
       remove.focus();
       screenshot.scrollIntoView({block:'start'});
@@ -134,14 +138,10 @@ export function openFeedback(opener) {
     }
     function showDelivery(result) {
       check.remove();
-      const hadScreenshot = Boolean(screenshotJpeg);
       screenshotJpeg = undefined;
-      const delivery = hadScreenshot && result.delivery === 'sent'
-        ? 'Your written feedback was sent to the marketing team.' : result.text;
       const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
       body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
-        h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
-        hadScreenshot && h('p', {class:'hint'}, 'The screenshot was not kept.'),
+        h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, result.text),
         feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
         h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
       thanks.focus();
@@ -204,6 +204,6 @@ export function openFeedback(opener) {
     check.mount();
     message.focus();
   }
-  openSheet('Feedback', body, opener, () => { forgetCapture(); check?.remove(); });
+  openSheet('Feedback', body, opener, () => { stopMarkup?.(); forgetCapture(); check?.remove(); });
   compose();
 }

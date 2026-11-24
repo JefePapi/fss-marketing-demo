@@ -27,7 +27,7 @@ excerpt of the first line. The message uses a fenced text block. Labels are
 `feedback` plus the lowercase type, deduplicated. IP addresses, limiter
 keys and check tokens are excluded from issues.
 
-### Screenshot validation (Worker version 5)
+### Screenshot validation and storage (Worker version 6)
 
 Text-only clients continue to send `application/json` with a cap of 8,192
 UTF-8 bytes. The local preview marks its optional image request as
@@ -51,11 +51,35 @@ image attempts per sender per minute in each isolate. Verified image attempts
 have separate buckets for one sender slot per minute and ten slots per hour
 across all senders. Image requests leave the full text allowance available.
 
-A failed image send keeps the draft and offers **Send text only**. The retry
-uses the current check if the relay refused the image before verification.
-When the check may have been used, the form shows **Getting ready...** until
-a fresh check arrives. A check error leaves a browser copy of the draft.
-Accepted JPEGs are discarded. The only GitHub write is the usual text issue.
+The relay creates the text issue first, with a `Screenshot failed.` note.
+It checks that the repository is private, then looks up the designated
+published, mutable `feedback-screenshots` release in the same repository.
+It uploads the JPEG as `issue-<number>.jpg`. A successful upload must return
+matching asset metadata, including the expected GitHub download URL. The
+relay replaces the failure note with that link and confirms the screenshot
+only after GitHub confirms the issue edit. The link uses the private
+repository's GitHub release download path. Keep the repository private so
+that access to the link continues to require repo access. [GitHub release asset API](https://docs.github.com/en/rest/releases/assets)
+
+A full release (1,000 assets), an immutable or missing release, an
+unconfirmed private repository, or an upload or link failure leaves the
+visitor's text issue intact. The visitor sees that the text was sent and the
+screenshot could not be confirmed. If the upload finishes but the issue
+edit fails, the asset can still be found by issue number on the private
+release. The Worker never creates releases or deletes assets. [GitHub release API](https://docs.github.com/en/rest/releases/releases)
+
+Before issue creation is confirmed, the form keeps the draft and offers
+**Send text only**. The retry reuses an unspent check or waits up to eight
+seconds for a fresh one. A check error or timeout leaves a browser copy.
+Visitor and staff text retries for an image attempt send the same
+submission ID in the `Content-Type` parameter `submission`. The JSON
+retains the text-only fields. The existing `LIMITER` binding serializes
+each submission in a separately named Durable Object. It records the
+issue number and delivery result, with no JPEG, message, IP, token or
+expiry. Retries reuse the existing issue. If GitHub's issue creation
+response is lost before the relay learns the issue number, the reservation
+blocks a second create and the browser keeps its copy. GitHub operations
+for these submissions share an eight-second deadline.
 
 ## Deployment and activation
 
@@ -72,18 +96,27 @@ published on the account’s workers.dev subdomain.
    **Settings → Variables and Secrets**. Add **Secret** values named
    `TURNSTILE_SECRET` (the matching widget secret) and `GITHUB_TOKEN`
    (a fine-grained token restricted to the private feedback repository
-   with Issues read/write access). Save the Worker configuration through
-   the normal deployment process. Both secrets belong only in the Worker.
+   with Issues and Contents read/write access and Metadata read access).
+   Issues write creates and edits feedback issues. Contents write is the
+   GitHub permission required for release-asset uploads. Save the Worker
+   configuration through the normal deployment process. Both secrets
+   belong only in the Worker.
 3. Read the Worker root with GET to see its version and whether both
    secrets are present. The `configured` flag checks presence only.
    After site activation, a successful form submission returns 201 and
    an issue number. The inbox shows that number beside the browser copy.
 
+Before any approved activation, the deployment owner provisions the
+`feedback-screenshots` release as published and mutable in the private
+feedback repository, and verifies a download with and without repository
+access. Version 6 requires the existing `LIMITER` binding for image
+submissions and their retries. The public editor flag stays off.
+
 With either secret absent the POST returns 503. A limit returns 429.
 An invalid message, failed challenge or unsuccessful GitHub request leaves
-the local feedback available for a manual retry. The Worker has no
-idempotency key. If the browser loses the response after an issue is
-created, a later manual retry can create a second issue.
+the local feedback available for a manual retry. Ordinary text-only entries
+use the original issue creation path. A lost response on that path may
+produce a second issue on manual retry.
 
-Run `npm run test:relay` from the site root. The Node module loader stubs
-the Cloudflare base class and the tests stub verification and issue creation.
+Run `npm run test:relay` from the site root. The Node tests stub Durable
+Object storage, verification, and all GitHub calls.

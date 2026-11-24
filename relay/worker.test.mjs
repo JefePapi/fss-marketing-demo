@@ -1,5 +1,6 @@
 import test from 'node:test'; import assert from 'node:assert/strict';
 import worker, { validate, issueFor, localLimit } from './worker.js';
+import { checkUrl, githubStub, privateLink, releaseAssets, releaseTag, repo, stubLimiter, uploadUrl } from './test-support.mjs';
 const O = 'https://jefepapi.github.io';
 let ip = 0;
 const req = (opts = {}) => new Request('https://x.workers.dev' + (opts.path || '/feedback'), { method: opts.method || 'POST',
@@ -36,18 +37,17 @@ const withSize = size => Buffer.concat([
 ]); // JPEG permits FF fill bytes before EOI.
 const imageCT = 'application/json; screenshot=jpeg';
 const textFields = { type: 'feedback', message: 'Sample résumé', turnstileToken: 'sample-check' };
-const imageBody = jpeg => ({ ...textFields, id: 'sample-id', screenshot: jpeg.toString('base64') });
-const testEnv = {
-  GITHUB_TOKEN: 'sample-issue-key', TURNSTILE_SECRET: 'sample-check-key',
-  LIMITER: { idFromName: name => name, get: () => ({ hit: async () => true }) },
-};
+let submission = 0;
+const imageBody = jpeg => ({ ...textFields, id: (++submission).toString(16).padStart(32, '0'), screenshot: jpeg.toString('base64') });
+const testEnv = { GITHUB_TOKEN: 'sample-issue-key', TURNSTILE_SECRET: 'sample-check-key' };
+testEnv.LIMITER = stubLimiter(testEnv);
 
-function stubExternal(t, verify = () => ({ success: true, hostname: new URL(O).hostname })) {
+function stubExternal(t, verify = () => ({ success: true, hostname: new URL(O).hostname }), override) {
+  const github = githubStub();
   return t.mock.method(globalThis, 'fetch', async (url, options) => {
-    if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+    if (url === checkUrl)
       return Response.json(verify(options.body.get('response')));
-    assert.equal(url, 'https://api.github.com/repos/JefePapi/fss-demo-feedback/issues');
-    return Response.json({ number: 7 }, { status: 201 });
+    return override?.(url, options, github) ?? github(url, options);
   }).mock;
 }
 
@@ -80,7 +80,7 @@ for (const mode of modes) {
       assert.equal((await worker.fetch(req({ ...transport(atCap, mode), ct }), testEnv)).status, 201);
       const rejected = await worker.fetch(req({ ...transport(atCap + ' ', mode), ct }), testEnv);
       assert.equal(rejected.status, 413);
-      assert.equal(upstream.callCount(), 2);
+      assert.equal(upstream.callCount(), ct ? 7 : 2);
     });
   }
 
@@ -91,7 +91,7 @@ for (const mode of modes) {
     }), testEnv);
     assert.equal((await send(262144)).status, 201);
     assert.equal((await send(262145)).status, 413);
-    assert.equal(upstream.callCount(), 2);
+    assert.equal(upstream.callCount(), 7);
   });
 }
 
@@ -121,7 +121,7 @@ for (const [axis, atCap, over] of [['width', jpegs.wide, jpegs.tooWide], ['heigh
     const send = jpeg => worker.fetch(req({ body: imageBody(jpeg), ct: imageCT }), testEnv);
     assert.equal((await send(atCap)).status, 201);
     assert.equal((await send(over)).status, 413);
-    assert.equal(upstream.callCount(), 2);
+    assert.equal(upstream.callCount(), 7);
   });
 }
 
@@ -165,25 +165,32 @@ test('the image envelope requires a matching header and base64 JPEG', async t =>
   assert.equal(upstream.callCount(), 0);
 });
 
-test('an accepted image makes exactly the same upstream calls as text only', async t => {
+test('uploads the exact JPEG after issue creation and only links the confirmed private asset', async t => {
   const upstream = stubExternal(t);
   const text = await worker.fetch(req({ body: textFields }), testEnv);
   const image = await worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT }), testEnv);
   assert.equal(text.status, 201);
   assert.equal(image.status, 201);
-  assert.deepEqual(await text.json(), await image.json());
-  assert.equal(upstream.callCount(), 4);
-  const [textCheck, textIssue, imageCheck, imageIssue] = upstream.calls.map(call => call.arguments);
+  assert.deepEqual(await text.json(), { ok: true, number: 7 });
+  assert.deepEqual(await image.json(), { ok: true, number: 7, screenshot: 'attached' });
+  const [textCheck, textIssue, imageCheck, imageIssue, privacy, release, assets, upload, link] = upstream.calls.map(call => call.arguments);
+  assert.deepEqual(upstream.calls.map(call => call.arguments[0]), [checkUrl, `${repo}/issues`, checkUrl,
+    `${repo}/issues`, repo, releaseTag, releaseAssets, uploadUrl(7), `${repo}/issues/7`]);
   assert.equal(imageCheck[0], textCheck[0]);
   assert.equal(imageCheck[1].method, textCheck[1].method);
   assert.deepEqual([...imageCheck[1].body], [...textCheck[1].body]);
   assert.equal(imageIssue[0], textIssue[0]);
-  const normalize = options => {
-    const issue = JSON.parse(options.body);
-    issue.body = issue.body.replace(/^\*\*Received:\*\* .*$/m, '**Received:** sample-time');
-    return { ...options, body: issue };
-  };
-  assert.deepEqual(normalize(imageIssue[1]), normalize(textIssue[1]));
+  const written = JSON.parse(imageIssue[1].body);
+  const plain = JSON.parse(textIssue[1].body);
+  const received = body => body.replace(/^\*\*Received:\*\* .*$/m, '**Received:** sample-time');
+  assert.deepEqual({ ...written, body: received(written.body) },
+    { ...plain, body: received(plain.body) + '\n\nScreenshot failed.' });
+  for (const [, options] of [imageIssue, privacy, release, assets, upload, link]) assert.equal(options.redirect, 'error');
+  assert.equal(upload[1].headers['Content-Type'], 'image/jpeg');
+  assert.deepEqual(Buffer.from(upload[1].body), jpegs.wide);
+  assert.deepEqual(JSON.parse(link[1].body), {
+    body: written.body.replace(/Screenshot failed\.$/, `[Screenshot (JPEG)](${privateLink(7)})`),
+  });
 });
 
 test('a rejected JPEG still allows text from the same sender', async t => {
@@ -199,17 +206,16 @@ test('a rejected JPEG still allows text from the same sender', async t => {
 function rateLimits() {
   const hits = new Map();
   const textBinding = [];
-  const env = { ...testEnv, LIMITER: { idFromName: name => name, get: name => ({
-    async hit(limit = 5) {
-      const count = (hits.get(name) || 0) + 1;
-      if (count > limit) return false;
-      hits.set(name, count);
-      return true;
-    },
-  }) }, RATE_LIMIT: { async limit({ key }) {
+  const env = { ...testEnv, RATE_LIMIT: { async limit({ key }) {
     textBinding.push(key);
     return { success: true };
   } } };
+  env.LIMITER = stubLimiter(env, async (name, limit = 5) => {
+    const count = (hits.get(name) || 0) + 1;
+    if (count > limit) return false;
+    hits.set(name, count);
+    return true;
+  });
   return { env, hits, textBinding };
 }
 
@@ -231,7 +237,7 @@ test('image attempts leave all sender and global text slots available', async t 
   const busy = await sendImage(busySender);
   assert.equal(busy.status, 429);
   assert.match((await busy.json()).error, /Send text only/);
-  assert.equal(upstream.callCount(), 22); // Ten issues and twelve checks.
+  assert.equal(upstream.callCount(), 72); // Ten complete deliveries and twelve checks.
   assert.equal(hits.get('image:global'), 10);
   assert.ok([...hits.keys()].every(key => key.startsWith('image:')));
   assert.equal(textBinding.length, 0);
@@ -242,7 +248,7 @@ test('image attempts leave all sender and global text slots available', async t 
   for (let i = 0; i < 10; i++) assert.equal((await sendText('sample-text-sender-' + i)).status, 201);
   assert.equal(hits.get('global'), 30);
   assert.equal((await sendText('sample-text-over-global')).status, 429);
-  assert.equal(upstream.callCount(), 82); // Thirty more issues and checks.
+  assert.equal(upstream.callCount(), 132); // Thirty more issues and checks.
 });
 
 test('unverified images from one sender are capped before additional siteverify calls', async t => {
@@ -303,4 +309,160 @@ test('image buckets are charged only after Turnstile passes', async t => {
   assert.equal((await send(body)).status, 201);
   assert.equal(hits.get('image:global'), 1);
   assert.equal((await send(body)).status, 429);
+});
+
+const savedText = { ok: true, number: 7, screenshot: 'failed' };
+const savedImage = { ...savedText, screenshot: 'attached' };
+const sendImage = (body = imageBody(jpegs.wide), env = testEnv) => worker.fetch(req({ body, ct: imageCT }), env);
+const retryText = (id, env = testEnv) => worker.fetch(req({ body: textFields, ct: `application/json; submission=${id}` }), env);
+const calledUrls = upstream => upstream.calls.map(call => call.arguments[0]);
+const issueWrites = upstream => upstream.calls.filter(call => call.arguments[0] === `${repo}/issues`);
+
+for (const [scenario, endpoint, metadata] of [
+  ['public repository', repo, { private: false, visibility: 'public' }],
+  ['internal repository', repo, { private: true, visibility: 'internal' }],
+  ['unknown repository visibility', repo, { private: true }],
+  ['immutable release', releaseTag, { id: 42, tag_name: 'feedback-screenshots', draft: false, immutable: true }],
+  ['draft release', releaseTag, { id: 42, tag_name: 'feedback-screenshots', draft: true, immutable: false }],
+  ['full release', releaseAssets, [{ id: 1000 }]],
+]) {
+  test(`${scenario} keeps text with a failure note and makes no screenshot writes`, async t => {
+    const upstream = stubExternal(t, undefined, url => url === endpoint ? Response.json(metadata) : undefined);
+    const response = await sendImage();
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), savedText);
+    const expected = [checkUrl, `${repo}/issues`, repo, releaseTag, releaseAssets];
+    assert.deepEqual(calledUrls(upstream), expected.slice(0, expected.indexOf(endpoint) + 1));
+    const initialIssue = JSON.parse(issueWrites(upstream)[0].arguments[1].body);
+    assert.match(initialIssue.body, /Screenshot failed\.$/);
+    assert.ok(!initialIssue.body.includes('/releases/'));
+  });
+}
+
+for (const [scenario, respond] of [
+  ['upload rejects', () => new Response(null, { status: 422 })],
+  ['upload response body over cap', () => new Response(' '.repeat(8193), { status: 201 })],
+  ['upload response has malformed JSON', () => new Response('{', { status: 201 })],
+  ...Object.entries({ size: 262145, state: 'starter', name: 'issue-8.jpg', content_type: 'text/html', browser_download_url: 'https://example.invalid/asset' })
+    .map(([field, value]) => [`invalid asset ${field}`, async (url, options, github) =>
+      Response.json({ ...await github(url, options).json(), [field]: value }, { status: 201 })]),
+]) {
+  test(`${scenario} leaves the issue and never links the screenshot`, async t => {
+    const upstream = stubExternal(t, undefined, (url, ...args) => url === uploadUrl(7) ? respond(url, ...args) : undefined);
+    const result = await sendImage();
+    assert.equal(result.status, 201);
+    assert.deepEqual(await result.json(), savedText);
+    assert.equal(calledUrls(upstream).at(-1), uploadUrl(7));
+    assert.ok(!calledUrls(upstream).includes(`${repo}/issues/7`));
+  });
+}
+
+for (const [scenario, linkResponse] of [
+  ['HTTP rejection', new Response(null, { status: 403 })],
+  ['wrong issue in link response', Response.json({ number: 8 })],
+]) {
+  test(`upload succeeds but linking gets ${scenario}; retries return the existing text issue`, async t => {
+    const body = imageBody(jpegs.wide);
+    const upstream = stubExternal(t, undefined, url => url === `${repo}/issues/7` ? linkResponse : undefined);
+    assert.deepEqual(await (await sendImage(body)).json(), savedText);
+    testEnv.LIMITER.restart();
+    assert.deepEqual(await (await retryText(body.id)).json(), savedText);
+    assert.deepEqual(await (await sendImage(body)).json(), savedText);
+    assert.equal(issueWrites(upstream).length, 1);
+    assert.deepEqual(calledUrls(upstream).slice(5), [uploadUrl(7), `${repo}/issues/7`, checkUrl, checkUrl]);
+  });
+}
+
+test('parallel image and staff text retries share the receipt and await link confirmation', async t => {
+  const linkStarted = Promise.withResolvers();
+  const allowLink = Promise.withResolvers();
+  const body = imageBody(jpegs.wide);
+  const upstream = stubExternal(t, undefined, async (url, options, github) => {
+    if (url === `${repo}/issues/7`) {
+      linkStarted.resolve();
+      await allowLink.promise;
+    }
+    return github(url, options);
+  });
+  const attempts = [sendImage(body)];
+  try {
+    const first = await Promise.race([linkStarted.promise.then(() => 'link'), attempts[0].then(() => 'response')]);
+    assert.equal(first, 'link');
+    attempts.push(sendImage(body), retryText(body.id));
+    for (const attempt of attempts) {
+      const state = await Promise.race([attempt.then(() => 'response'), new Promise(resolve => setImmediate(resolve, 'waiting'))]);
+      assert.equal(state, 'waiting');
+    }
+  } finally {
+    allowLink.resolve();
+    await Promise.allSettled(attempts);
+  }
+  for (const response of await Promise.all(attempts)) assert.deepEqual(await response.json(), savedImage);
+  testEnv.LIMITER.restart();
+  assert.deepEqual(await (await retryText(body.id)).json(), savedImage);
+  assert.equal(issueWrites(upstream).length, 1);
+  assert.equal(calledUrls(upstream).filter(url => url === uploadUrl(7)).length, 1);
+  assert.equal(calledUrls(upstream).filter(url => url === `${repo}/issues/7`).length, 1);
+});
+
+for (const [stage, endpoint, expected] of [
+  ['issue creation', `${repo}/issues`, null],
+  ['upload', uploadUrl(7), savedText],
+  ['issue link', `${repo}/issues/7`, savedText],
+]) {
+  test(`GitHub timeout during ${stage} keeps retry from creating a duplicate issue`, async t => {
+    const deadline = new AbortController();
+    const timers = t.mock.method(AbortSignal, 'timeout', ms => ms === 8000 ? deadline.signal : new AbortController().signal);
+    const body = imageBody(jpegs.wide);
+    const upstream = stubExternal(t, undefined, (url, options) => {
+      if (url !== endpoint) return;
+      assert.equal(options.signal, deadline.signal);
+      return new Promise((_, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+        queueMicrotask(() => deadline.abort());
+      });
+    });
+    const verify = async response => {
+      assert.equal(response.status, expected ? 201 : 502);
+      const result = await response.json();
+      if (expected) assert.deepEqual(result, expected);
+      else assert.equal(result.ok, false);
+    };
+    await verify(await sendImage(body));
+    assert.equal(deadline.signal.aborted, true);
+    assert.equal(calledUrls(upstream).at(-1), endpoint);
+    testEnv.LIMITER.restart();
+    await verify(await retryText(body.id));
+    assert.equal(issueWrites(upstream).length, 1);
+    assert.deepEqual(timers.mock.calls.map(call => call.arguments[0]), [5000, 8000, 5000]);
+  });
+}
+
+test('a rejected issue create can retry as text with the same submission ID', async t => {
+  let rejected = false;
+  const upstream = stubExternal(t, undefined, url => {
+    if (url === `${repo}/issues` && !rejected) {
+      rejected = true;
+      return new Response(null, { status: 422 });
+    }
+  });
+  const body = imageBody(jpegs.wide);
+  assert.equal((await sendImage(body)).status, 502);
+  const result = await retryText(body.id);
+  assert.equal(result.status, 201);
+  assert.deepEqual(await result.json(), { ok: true, number: 7 });
+  assert.deepEqual(calledUrls(upstream), [checkUrl, `${repo}/issues`, checkUrl, `${repo}/issues`]);
+  assert.doesNotMatch(JSON.parse(issueWrites(upstream)[1].arguments[1].body).body, /Screenshot/);
+});
+
+test('malformed or missing submission IDs cannot bypass validation and binding checks', async t => {
+  const upstream = stubExternal(t);
+  assert.equal((await sendImage({ ...imageBody(jpegs.wide), id: '../issues' })).status, 400);
+  assert.equal((await sendImage({ ...imageBody(jpegs.wide), id: undefined })).status, 400);
+  assert.equal((await retryText('')).status, 400);
+  assert.equal((await sendImage(imageBody(jpegs.wide), { ...testEnv, LIMITER: undefined })).status, 503);
+  assert.equal(upstream.callCount(), 0);
+  const oldText = await worker.fetch(req({ body: { ...textFields, id: 'legacy' } }), testEnv);
+  assert.deepEqual(await oldText.json(), { ok: true, number: 7 });
+  assert.deepEqual(calledUrls(upstream), [checkUrl, `${repo}/issues`]);
 });
