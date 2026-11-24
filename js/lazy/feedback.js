@@ -30,14 +30,18 @@ function sendStored(id, token, allowed, screenshot) {
   }, 'mktdemo.feedback.send.' + id);
 }
 
-export async function submitFeedback(entry, token, screenshot) {
-  await withFeedbackLock(() => {
+function saveDraft(entry) {
+  return withFeedbackLock(() => {
     const entries = feedbackEntries();
     const previous = entries.find(e => e.id === entry.id);
     if (!previous) writeFeedback(prependEntry(entries, entry));
     else if (previous.delivery === 'local')
       writeFeedback(entries.map(e => e.id === entry.id ? {...entry, read:e.read} : e));
   });
+}
+
+export async function submitFeedback(entry, token, screenshot) {
+  await saveDraft(entry);
   return deliverFeedback(entry.id, token, undefined, screenshot);
 }
 
@@ -61,7 +65,7 @@ export function openFeedback(opener) {
   function compose() {
     check = feedbackCheck();
     let type = TYPES[0];
-    let screenshotJpeg, draft;
+    let screenshotJpeg, draft, textOnly = false;
     const theme = document.documentElement.dataset.theme;
     const count = h('span', {id:'feedback-length', class:'hint', 'aria-live':'polite'}, '0 / 2000');
     const error = h('p', {id:'feedback-error', class:'err', role:'alert', hidden:true});
@@ -98,6 +102,7 @@ export function openFeedback(opener) {
     function sendTextOnly(reason) {
       const hadPreview = Boolean(screenshotJpeg);
       screenshotJpeg = undefined;
+      textOnly = true;
       screenshotStatus.textContent = reason + ' You can still send text feedback.';
       save.textContent = 'Send text only';
       if (hadPreview) {
@@ -107,6 +112,7 @@ export function openFeedback(opener) {
     }
     function showPreview(img, encoded) {
       screenshotJpeg = encoded;
+      textOnly = false;
       save.textContent = 'Save feedback';
       const remove = h('button', {type:'button', class:'btn', onclick:() => {
         screenshotJpeg = undefined;
@@ -120,6 +126,35 @@ export function openFeedback(opener) {
     }
     screenshot.append(screenshotHint, add, screenshotStatus);
     const save = h('button', {type:'submit', class:'btn primary'}, 'Save feedback');
+    function readDraft() {
+      const id = draft?.id ?? Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8,'0')).join('');
+      draft = buildEntry({type, message:message.value, name:name.value,
+        page, route, theme}, id, draft?.at ?? new Date().toISOString());
+      return draft;
+    }
+    function showDelivery(result) {
+      check.remove();
+      const hadScreenshot = Boolean(screenshotJpeg);
+      screenshotJpeg = undefined;
+      const delivery = hadScreenshot && result.delivery === 'sent'
+        ? 'Your written feedback was sent to the marketing team.' : result.text;
+      const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
+      body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
+        h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
+        hadScreenshot && h('p', {class:'hint'}, 'The screenshot was not kept.'),
+        feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
+        h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
+      thanks.focus();
+    }
+    function waitForTextToken() {
+      if (!check.token()) save.textContent = 'Getting ready...';
+      return check.waitForToken();
+    }
+    async function showSavedDraft() {
+      // The visitor may have edited the draft while the check was running.
+      if (message.value.trim()) await saveDraft(readDraft());
+      if (body.isConnected) showDelivery(relayResult(0));
+    }
     const form = h('form', {class:'feedback-form', novalidate:true, onsubmit:async event => {
       event.preventDefault();
       if (save.disabled || form.hidden) return;
@@ -135,31 +170,25 @@ export function openFeedback(opener) {
       const screenshotButton = screenshot.querySelector('button');
       screenshotButton.disabled = true;
       try {
-        const id = draft?.id ?? Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8,'0')).join('');
-        draft = buildEntry({type, message:message.value, name:name.value,
-          page, route, theme}, id, draft?.at ?? new Date().toISOString());
-        const result = await submitFeedback(draft, check.token(), screenshotJpeg);
+        const token = textOnly ? await waitForTextToken() : check.token();
+        if (!body.isConnected) return;
+        if (textOnly && !token) { await showSavedDraft(); return; }
+        const result = await submitFeedback(readDraft(), token, screenshotJpeg);
         if (!body.isConnected) return;
         if (result.screenshotError) {
-          check.reset();
+          if (result.refreshCheck) check.reset();
+          sendTextOnly(result.screenshotError);
+          const textToken = await waitForTextToken();
+          if (!body.isConnected) return;
+          if (!textToken) { await showSavedDraft(); return; }
+          save.textContent = 'Send text only';
           save.disabled = false;
           save.removeAttribute('aria-busy');
           screenshotButton.disabled = false;
-          sendTextOnly(result.screenshotError);
+          save.focus();
           return;
         }
-        check.remove();
-        const hadScreenshot = Boolean(screenshotJpeg);
-        screenshotJpeg = undefined;
-        const delivery = hadScreenshot && result.delivery === 'sent'
-          ? 'Your written feedback was sent to the marketing team.' : result.text;
-        const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
-        body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
-          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
-          hadScreenshot && h('p', {class:'hint'}, 'The screenshot was not kept.'),
-          feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
-          h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
-        thanks.focus();
+        showDelivery(result);
       } catch {
         save.disabled = false;
         save.removeAttribute('aria-busy');

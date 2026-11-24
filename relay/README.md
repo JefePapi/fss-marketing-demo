@@ -46,12 +46,16 @@ EXIF/GPS, XMP, ICC, comments or other optional metadata. Only the standard
 thumbnail-free JFIF application header is allowed. Rejection keeps
 untrusted metadata out without rewriting JPEGs in the Worker.
 
-Verified image attempts have separate buckets for one sender slot per minute
-and ten slots per hour across all senders. The Worker charges these buckets
-after Turnstile passes. Image requests leave the full text allowance available.
-Any failed image send offers **Send text only** in the editor and keeps the
-draft. Accepted JPEGs are discarded. The only GitHub write is the usual text
-issue.
+Before reading the image body or calling Turnstile, the Worker allows four
+image attempts per sender per minute in each isolate. Verified image attempts
+have separate buckets for one sender slot per minute and ten slots per hour
+across all senders. Image requests leave the full text allowance available.
+
+A failed image send keeps the draft and offers **Send text only**. The retry
+uses the current check if the relay refused the image before verification.
+When the check may have been used, the form shows **Getting ready...** until
+a fresh check arrives. A check error leaves a browser copy of the draft.
+Accepted JPEGs are discarded. The only GitHub write is the usual text issue.
 
 ## Deployment and activation
 

@@ -839,10 +839,10 @@ Totals **18 PASS, 0 FAIL, 1 N/A**.
 | Demo banner, footer and hooks | PASS | The existing shell and stable hooks remain in place. |
 | Controls, uploads and unknown content | PASS | Capture continues to mask fields, uploads and unknown content. A browser test checks the flattened field mask. |
 | Staff and record details | PASS | Capture still refuses staff and record-detail views. The Staff refusal test can send text. |
-| Feedback sheet and keyboard | PASS | Official browser tests cover draft preservation and focus after timeouts, network failures and relay errors. The text retry uses a fresh check token. |
+| Feedback sheet and keyboard | PASS | Official browser tests cover tap and Enter during a check refresh, reuse of an unspent check, and a browser-only save on widget error. |
 | Screen sharing | PASS | The editor continues to use local Canvas 2D. |
 | Retention and logging | PASS | The JPEG stays in tab memory until submit, and the relay discards it. Browser storage, GitHub issues and logs contain no screenshot. |
-| Request and rate limits | PASS | Over-cap text returns 413 before the limiter. Images use separate buckets after Turnstile passes. Tests confirm the full five sender and 30 global text slots remain available after image traffic. |
+| Request and rate limits | PASS | Over-cap text returns 413 before the limiter. A separate image gate caps unverified attempts before siteverify. Tests confirm identical text status sequences on the branch and main, all five sender and 30 global text slots after image traffic, and zero issue calls on denied requests. |
 | Production data | N/A | Production checks used GET for the site module and relay status. |
 
 Totals **19 PASS, 0 FAIL, 1 N/A**.

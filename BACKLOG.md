@@ -369,6 +369,23 @@ Night Wall Light stayed at 219,528 initial bytes. All five mutations failed
 their suites and were restored. Checklist totals are 19 PASS, 0 FAIL, 1 N/A.
 Ready for Tester re-review on PR #3.
 
+**Round 2 of 3 opened (24 Nov).** The refuter found an unready Turnstile
+retry, unverified image traffic reaching siteverify without a rate limit, and
+missing upstream-call assertions. Fix these on PR #3. The production Pages
+modules match main at `5211f46`, and the live relay reports version 4.
+
+**Round 2 close-out.** The text retry keeps an unspent check or waits for a
+fresh one. A widget error keeps the draft in the browser. Images get four
+attempts per sender per minute per isolate before siteverify. The text status
+sequences match main, including five sends per sender and 30 globally.
+The capacity test counts upstream calls and catches an issue POST on 429.
+Unit passed 77/77 on both revisions. Relay passed 45/45 vs 9/9. Official
+browser parity passed 433 vs 391 with the same five skips and no failing
+names. All 68 JavaScript syntax checks passed. Night Wall Light measured
+219,528 initial bytes. Checklist totals are 19 PASS, 0 FAIL, 1 N/A.
+All six scratch mutations were caught and restored. PR #3 is ready for
+Tester re-review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

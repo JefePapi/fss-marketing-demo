@@ -214,7 +214,7 @@ function rateLimits() {
 }
 
 test('image attempts leave all sender and global text slots available', async t => {
-  stubExternal(t);
+  const upstream = stubExternal(t);
   const { env, hits, textBinding } = rateLimits();
   const sendImage = (ip, options) => worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT, ip, ...options }), env);
   const sendText = ip => worker.fetch(req({ body: textFields, ip }), env);
@@ -224,12 +224,14 @@ test('image attempts leave all sender and global text slots available', async t 
   const busySender = 'sample-image-busy';
   assert.equal((await sendImage(oversized, { raw: ' '.repeat(368641) })).status, 413);
   assert.equal((await sendImage(invalid, { body: imageBody(Buffer.from('not a JPEG')) })).status, 422);
+  assert.equal(upstream.callCount(), 0);
   assert.equal((await sendImage(accepted)).status, 201);
   assert.equal((await sendImage(accepted)).status, 429);
   for (let i = 0; i < 9; i++) assert.equal((await sendImage('sample-image-sender-' + i)).status, 201);
   const busy = await sendImage(busySender);
   assert.equal(busy.status, 429);
   assert.match((await busy.json()).error, /Send text only/);
+  assert.equal(upstream.callCount(), 22); // Ten issues and twelve checks.
   assert.equal(hits.get('image:global'), 10);
   assert.ok([...hits.keys()].every(key => key.startsWith('image:')));
   assert.equal(textBinding.length, 0);
@@ -240,6 +242,27 @@ test('image attempts leave all sender and global text slots available', async t 
   for (let i = 0; i < 10; i++) assert.equal((await sendText('sample-text-sender-' + i)).status, 201);
   assert.equal(hits.get('global'), 30);
   assert.equal((await sendText('sample-text-over-global')).status, 429);
+  assert.equal(upstream.callCount(), 82); // Thirty more issues and checks.
+});
+
+test('unverified images from one sender are capped before additional siteverify calls', async t => {
+  const upstream = stubExternal(t, () => ({ success: false }));
+  const { env, hits, textBinding } = rateLimits();
+  const ip = 'sample-unverified-image-sender';
+  const body = imageBody(jpegs.wide);
+  const send = (sender = ip) => worker.fetch(req({ body, ct: imageCT, ip: sender }), env);
+  for (let i = 0; i < 4; i++) assert.equal((await send()).status, 403);
+  assert.equal(upstream.callCount(), 4);
+  for (let i = 0; i < 10; i++) {
+    const response = await send();
+    assert.equal(response.status, 429);
+    assert.equal((await response.json()).checkUsed, false);
+  }
+  assert.equal(upstream.callCount(), 4);
+  assert.equal((await send('another-unverified-image-sender')).status, 403);
+  assert.equal(upstream.callCount(), 5);
+  assert.equal(hits.size, 0);
+  assert.equal(textBinding.length, 0);
 });
 
 test('failed Turnstile on a valid JPEG returns 403 without creating an issue', async t => {

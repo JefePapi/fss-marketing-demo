@@ -46,6 +46,30 @@ async function withFixedCapture(page) {
   }));
 }
 
+async function withFeedbackCheck(page) {
+  await page.route(widget, route => route.fulfill({
+    contentType:'text/javascript',
+    body:`window.sampleCheckResets = 0;
+      window.turnstile = {
+        render(container, options) {
+          window.completeSampleCheck = () => options.callback('sample-text-check');
+          window.failSampleCheck = options['error-callback'];
+          options.callback('sample-image-check');
+          container.textContent = 'Sample check ready';
+          return 1;
+        },
+        reset() { window.sampleCheckResets++; },
+        remove() {},
+      };`,
+  }));
+}
+
+async function addScreenshot(page) {
+  await add(page).click();
+  await button(page, 'Save screenshot').click();
+  await expect(preview(page)).toBeVisible();
+}
+
 async function tap(page, x, y, touch) {
   const canvas = surface(page).locator('canvas');
   await canvas.scrollIntoViewIfNeeded();
@@ -239,9 +263,11 @@ test('drag Highlight, tap Circle, pin Note, undo and save the exact JPEG once', 
 for (const problem of ['unreadable', 'oversized']) {
   test(`offers Send text only when the screenshot is ${problem}`, async ({page}) => {
     await withFixedCapture(page);
+    await withFeedbackCheck(page);
     const requests = [];
     page.on('request', request => { if (request.url() === relay) requests.push(request); });
     await openFeedback(page);
+    await expect(page.getByText('Sample check ready')).toBeVisible();
     await add(page).click();
     await surface(page).locator('canvas').evaluate((canvas, problem) => {
       canvas.toDataURL = () => 'data:image/jpeg;base64,' + (problem === 'unreadable'
@@ -255,66 +281,67 @@ for (const problem of ['unreadable', 'oversized']) {
     expect(requests).toHaveLength(0);
     const posted = page.waitForRequest(relay);
     await button(page, 'Send text only').click();
-    expect((await posted).postDataBuffer()).toEqual(expectedHomePayload);
+    expect((await posted).postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), turnstileToken:'sample-image-check'});
+    expect(await page.evaluate(() => window.sampleCheckResets)).toBe(0);
     await expect(page.getByText('Sent to the marketing team.')).toBeVisible();
     expect(requests).toHaveLength(1);
   });
 }
 
-for (const [failure, reason = 'Could not send this screenshot.'] of [
-  [413, 'This screenshot is too large.'],
-  [422, 'Could not read this screenshot.'],
-  [429, 'Screenshots are busy right now.'],
-  [500],
-  ['Worker CPU error'],
-  ['network error'],
-  ['timeout'],
+for (const [failure, refresh, reason = 'Could not send this screenshot.'] of [
+  [413, false, 'This screenshot is too large.'],
+  [422, false, 'Could not read this screenshot.'],
+  ['pre-check 429', false, 'Screenshots are busy right now.'],
+  [429, true, 'Screenshots are busy right now.'],
+  [403, true],
+  [500, true],
+  [502, true],
+  ['Worker CPU error', true],
+  ['network error', true],
+  ['timeout', true],
 ]) {
-  test(`relay ${failure} lets the visitor send the same draft as text only`, async ({page}) => {
+  test(`relay ${failure} lets the visitor send the same draft as text only`, async ({page}, {project}) => {
     await withFixedCapture(page);
-    // Model a token already used by a send that failed after verification.
-    if (failure === 500) await page.route(widget, route => route.fulfill({
-      contentType:'text/javascript',
-      body:`let complete;
-        window.turnstile = {
-          render(container, options) {
-            complete = options.callback;
-            complete('sample-image-check');
-            container.textContent = 'Sample check ready';
-            return 1;
-          },
-          reset() { complete('sample-text-check'); },
-          remove() {},
-        };`,
-    }));
+    await withFeedbackCheck(page);
     const requests = [];
     await page.route(relay, route => {
       const request = route.request();
       requests.push(request);
       if (!request.postDataJSON().screenshot) return route.fulfill({status:201, json:{ok:true, number:12}});
+      if (failure === 'pre-check 429') return route.fulfill({status:429, json:{ok:false, checkUsed:false}});
       if (failure === 'network error') return route.abort('failed');
       if (failure === 'timeout') return; // Leave the image POST pending for the client's AbortController.
       if (failure === 'Worker CPU error') return route.fulfill({status:503, contentType:'text/html', body:'Error 1102'});
       return route.fulfill({status:failure, json:{ok:false}});
     });
     await openFeedback(page);
-    if (failure === 500) await expect(page.getByText('Sample check ready')).toBeVisible();
-    await add(page).click();
-    await button(page, 'Save screenshot').click();
-    await expect(preview(page)).toBeVisible();
+    await expect(page.getByText('Sample check ready')).toBeVisible();
+    await addScreenshot(page);
     if (failure === 'timeout') await page.clock.install();
     const imagePost = page.waitForRequest(relay);
     await button(page, 'Save feedback').click();
     await imagePost;
     if (failure === 'timeout') await page.clock.fastForward(10_000);
     await expect(page.getByRole('status')).toContainText(reason);
+    expect(await page.evaluate(() => window.sampleCheckResets)).toBe(refresh ? 1 : 0);
+    if (refresh) {
+      const waiting = button(page, 'Getting ready...');
+      await expect(waiting).toBeDisabled();
+      if (failure === 500) {
+        if (project.name === 'phone-390') await waiting.tap({force:true});
+        else await waiting.click({force:true});
+        await page.locator('#feedback-name').press('Enter');
+        expect(requests).toHaveLength(1);
+      }
+      await page.evaluate(() => window.completeSampleCheck());
+    }
     const fallback = button(page, 'Send text only');
     await expect(fallback).toBeFocused();
     await expect(message(page)).toHaveValue(draft);
     await expect(preview(page)).toHaveCount(0);
     expect(requests).toHaveLength(1);
     const originalId = requests[0].postDataJSON().id;
-    if (failure === 500) expect(requests[0].postDataJSON().turnstileToken).toBe('sample-image-check');
+    expect(requests[0].postDataJSON().turnstileToken).toBe('sample-image-check');
     const updatedDraft = draft + ' Sample follow-up.';
     await message(page).fill(updatedDraft);
     await fallback.click();
@@ -322,13 +349,38 @@ for (const [failure, reason = 'Could not send this screenshot.'] of [
     expect(requests).toHaveLength(2);
     expect(requests[1].headers()['content-type']).toBe('application/json');
     expect(requests[1].postDataJSON()).toEqual({...JSON.parse(expectedHomePayload), message:updatedDraft,
-      ...(failure === 500 && {turnstileToken:'sample-text-check'})});
+      turnstileToken:refresh ? 'sample-text-check' : 'sample-image-check'});
     const entries = await page.evaluate(() => JSON.parse(localStorage.getItem('mktdemo.feedback')));
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({id:originalId, message:updatedDraft, delivery:'sent', issue:12});
     expect(entries[0]).not.toHaveProperty('screenshot');
   });
 }
+
+test('widget error while getting ready saves the draft without a text POST', async ({page}) => {
+  await withFixedCapture(page);
+  await withFeedbackCheck(page);
+  const requests = [];
+  await page.route(relay, route => {
+    requests.push(route.request());
+    return route.fulfill({status:500, json:{ok:false}});
+  });
+  await openFeedback(page);
+  await expect(page.getByText('Sample check ready')).toBeVisible();
+  await addScreenshot(page);
+  await button(page, 'Save feedback').click();
+  await expect(button(page, 'Getting ready...')).toBeDisabled();
+  await expect(message(page)).toHaveValue(draft);
+  const updatedDraft = draft + ' Sample edit while waiting.';
+  await message(page).fill(updatedDraft);
+  await page.evaluate(() => window.failSampleCheck());
+  await expect(page.getByText("Saved in this browser. We couldn't send it right now.")).toBeVisible();
+  expect(requests).toHaveLength(1);
+  const entries = await page.evaluate(() => JSON.parse(localStorage.getItem('mktdemo.feedback')));
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({id:requests[0].postDataJSON().id, message:updatedDraft, delivery:'local'});
+  expect(entries[0]).not.toHaveProperty('screenshot');
+});
 
 test('keyboard can select, move, mark, undo and return focus', async ({page}) => {
   await withFixedCapture(page);
@@ -454,9 +506,11 @@ test('shows the masked opening page after typing and scrolling', async ({page}) 
 });
 
 test('a refused staff capture leaves text feedback available and loads no editor', async ({page}) => {
+  await withFeedbackCheck(page);
   const assets = [];
   page.on('request', request => assets.push(request.url()));
   await openFeedback(page, './' + previewQuery + '#/staff?show=all');
+  await expect(page.getByText('Sample check ready')).toBeVisible();
   await add(page).click();
   await expect(page.getByRole('status')).toContainText('You can still send text feedback.');
   await expect(add(page)).toBeFocused();

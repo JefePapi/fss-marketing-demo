@@ -13,6 +13,7 @@ const MAX_BODY = 8192;
 const MAX_IMAGE_BODY = 360 * 1024;
 const MAX_JPEG = 256 * 1024;
 const MAX_EDGE = 1280;
+const IMAGE_ATTEMPTS_PER_MINUTE = 4;
 const LIMITS = { message: 2000, name: 60, page: 200, route: 200, token: 2048 };
 
 const cors = {
@@ -63,11 +64,12 @@ export function issueFor(v, now = new Date()) {
 
 // Second, best-effort layer: per-isolate memory window (the binding is approximate per location).
 const recent = new Map();
-export function localLimit(key, now = Date.now(), limit = 5, windowMs = 60_000) {
-  const list = (recent.get(key) || []).filter(t => now - t < windowMs);
-  if (list.length >= limit) { recent.set(key, list); return false; }
-  list.push(now); recent.set(key, list);
-  if (recent.size > 5000) recent.clear();
+const recentImageAttempts = new Map();
+export function localLimit(key, now = Date.now(), limit = 5, windowMs = 60_000, buckets = recent) {
+  const list = (buckets.get(key) || []).filter(t => now - t < windowMs);
+  if (list.length >= limit) { buckets.set(key, list); return false; }
+  list.push(now); buckets.set(key, list);
+  if (buckets.size > 5000) buckets.clear();
   return true;
 }
 
@@ -257,13 +259,17 @@ export default {
     const contentType = (request.headers.get('Content-Type') || '').toLowerCase();
     if (!contentType.startsWith('application/json')) return json(415, { ok: false, error: 'Send JSON.' });
     const image = /;\s*screenshot=jpeg\s*(?:;|$)/.test(contentType);
+    const key = await ipKey(request);
+    if (image && !localLimit(key, Date.now(), IMAGE_ATTEMPTS_PER_MINUTE, 60_000, recentImageAttempts)) {
+      void request.body?.cancel().catch(() => {});
+      return json(429, { ok: false, error: 'Screenshots are busy right now. Send text only.', checkUsed: false });
+    }
 
     let raw;
     try { raw = await readBody(request.body, image ? MAX_IMAGE_BODY : MAX_BODY); }
     catch { return json(400, { ok: false, error: 'Could not read the request.' }); }
     if (raw === null) return json(413, { ok: false, error: image ? 'This screenshot is too large. Send text only.' : 'Too large.' });
 
-    const key = await ipKey(request);
     const limiter = name => env.LIMITER.get(env.LIMITER.idFromName(name));
     if (!image) {
       const allowed = localLimit(key) && (!env.LIMITER || (await limiter(key).hit() && await limiter('global').hit(30, 3_600_000)))
