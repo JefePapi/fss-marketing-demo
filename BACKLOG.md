@@ -408,6 +408,26 @@ initial bytes. All three required relay mutants failed. The checklist records
 21 PASS, 0 FAIL and 2 N/A. The Worker deployment and real private download
 check remain pending approved activation.
 
+**PR #4, round 1 of 3 opened.** At `19639a2`, a failed GitHub issue create
+can leave a reservation that blocks visitor and staff retries. Recover those
+submissions, give issue creation its own deadline, explain the missing release
+flag fallback, and document the minimum token permissions. Pages matches the
+feedback module on main `948caa1`, and the production relay reports version 4.
+
+**Round 1 close-out.** Explicit rejections release the reservation. After an
+uncertain GitHub response, a retry checks the repository's issues for the
+submission ID and reuses the issue if found. Issue creation gets a separate
+eight-second deadline. A missing release `immutable` flag records a fixed
+warning and leaves the written feedback intact.
+
+Unit passed 77/77 on both revisions. Relay passed 76/76 vs 45/45. Official
+browser parity passed 445 vs 433 with the same five skips and no failing
+names in the matched run. Syntax checks passed on 69 files vs 68. Night Wall
+Light measured 219,528 of 220,000 bytes. All seven scratch mutants were
+caught. The checklist records 21 PASS, 0 FAIL and 2 N/A. Ready for review
+on PR #4. Live GitHub issue visibility, Cloudflare runtime behavior and
+private release access remain unverified.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

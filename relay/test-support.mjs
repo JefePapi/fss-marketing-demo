@@ -31,19 +31,46 @@ export function stubLimiter(env, hit = async () => true) {
   };
 }
 
-export function githubStub(number = 7) {
-  return (url, options = {}) => {
-    if (url === `${repo}/issues` && options.method === 'POST') return Response.json({ number }, { status: 201 });
+export function githubStub(firstNumber = 7, respond) {
+  const issues = new Map();
+  const issueUrl = `${repo}/issues`;
+  const fallback = async (url, options) => {
+    options.signal?.throwIfAborted();
+    if (url === issueUrl && options.method === 'POST') {
+      const number = firstNumber + issues.size;
+      const issue = { number, body: JSON.parse(options.body).body };
+      issues.set(number, issue);
+      return Response.json(issue, { status: 201 });
+    }
+    if (url.startsWith(`${issueUrl}?`) && !options.method) {
+      const params = new URL(url).searchParams;
+      assert.equal(params.get('state'), 'all');
+      assert.equal(params.get('sort'), 'created');
+      assert.equal(params.get('direction'), 'asc');
+      assert.ok(Number.isFinite(Date.parse(params.get('since'))));
+      const perPage = Number(params.get('per_page'));
+      const offset = (Number(params.get('page')) - 1) * perPage;
+      return Response.json([...issues.values()].slice(offset, offset + perPage));
+    }
     if (url === repo && !options.method) return Response.json({ private: true, visibility: 'private' });
     if (url === releaseTag && !options.method)
       return Response.json({ id: 42, tag_name: 'feedback-screenshots', draft: false, immutable: false });
     if (url === releaseAssets && !options.method) return Response.json([]);
-    if (url === uploadUrl(number) && options.method === 'POST') return Response.json({
+    const number = Number(url.match(/(\d+)(?:\.jpg)?$/)?.[1]);
+    if (issues.has(number) && url === uploadUrl(number) && options.method === 'POST') return Response.json({
       id: 123, name: `issue-${number}.jpg`, state: 'uploaded', content_type: 'image/jpeg',
       size: options.body.byteLength, browser_download_url: privateLink(number),
     }, { status: 201 });
-    if (url === `${repo}/issues/${number}` && options.method === 'PATCH')
-      return Response.json({ number, body: JSON.parse(options.body).body });
+    if (issues.has(number) && url === `${issueUrl}/${number}` && options.method === 'PATCH') {
+      const issue = { number, body: JSON.parse(options.body).body };
+      issues.set(number, issue);
+      return Response.json(issue);
+    }
     assert.fail(`Unexpected GitHub request: ${options.method || 'GET'} ${url}`);
   };
+  const github = async (url, options = {}) => {
+    options.signal?.throwIfAborted();
+    return (await respond?.(url, options, fallback)) ?? fallback(url, options);
+  };
+  return Object.assign(github, { issues });
 }

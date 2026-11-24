@@ -9,9 +9,11 @@ demo is a separate, user-initiated action.
 
 ## Privacy and limits
 
-The Worker has no application logging. Its deployment disables observability
-and Logpush. The limiter reads the Cloudflare connecting IP, groups IPv6
-addresses by their first four hextets (/64), and hashes the resulting key.
+The Worker logs one fixed warning if GitHub omits the release's `immutable`
+flag. The warning contains no request, release or credential data. The
+deployment disables observability and Logpush. The limiter reads the
+Cloudflare connecting IP, groups IPv6 addresses by their first four hextets
+(/64), and hashes the resulting key.
 A SQLite-backed `RateLimiter` Durable Object keeps timestamps for up to
 5 attempts per minute per key. Another object enforces 30 attempts per hour
 across all senders. Alarms clear inactive counters. A per-isolate window and
@@ -61,9 +63,10 @@ only after GitHub confirms the issue edit. The link uses the private
 repository's GitHub release download path. Keep the repository private so
 that access to the link continues to require repo access. [GitHub release asset API](https://docs.github.com/en/rest/releases/assets)
 
-A full release (1,000 assets), an immutable or missing release, an
-unconfirmed private repository, or an upload or link failure leaves the
-visitor's text issue intact. The visitor sees that the text was sent and the
+A full release (1,000 assets), an immutable or missing release, a release
+response without an `immutable` flag, an unconfirmed private repository,
+or an upload or link failure leaves the visitor's text issue intact. The
+visitor sees that the text was sent and the
 screenshot could not be confirmed. If the upload finishes but the issue
 edit fails, the asset can still be found by issue number on the private
 release. The Worker never creates releases or deletes assets. [GitHub release API](https://docs.github.com/en/rest/releases/releases)
@@ -74,12 +77,17 @@ seconds for a fresh one. A check error or timeout leaves a browser copy.
 Visitor and staff text retries for an image attempt send the same
 submission ID in the `Content-Type` parameter `submission`. The JSON
 retains the text-only fields. The existing `LIMITER` binding serializes
-each submission in a separately named Durable Object. It records the
-issue number and delivery result, with no JPEG, message, IP, token or
-expiry. Retries reuse the existing issue. If GitHub's issue creation
-response is lost before the relay learns the issue number, the reservation
-blocks a second create and the browser keeps its copy. GitHub operations
-for these submissions share an eight-second deadline.
+each submission in a separately named Durable Object. A pending receipt
+keeps a lookup start time. A confirmed receipt keeps the issue number and
+delivery result. Receipts contain no JPEG, message, IP or token and have no
+expiry. An explicit GitHub rejection releases the reservation. After an
+uncertain response, the retry lists the repository's open and closed issues
+for the lookup window and matches the submission ID in a hidden issue-body
+comment. It reuses a matching issue. A successful lookup with no match
+allows a new create. A failed lookup keeps the reservation for the next
+retry. Reconciliation depends on GitHub listing a completed create before
+the retry's lookup finishes. Issue creation has its own eight-second
+deadline. The lookup and screenshot steps each have a separate deadline.
 
 ## Deployment and activation
 
@@ -95,12 +103,17 @@ published on the account’s workers.dev subdomain.
 2. In Cloudflare, open the deployed **fss-demo-feedback** Worker, then
    **Settings → Variables and Secrets**. Add **Secret** values named
    `TURNSTILE_SECRET` (the matching widget secret) and `GITHUB_TOKEN`
-   (a fine-grained token restricted to the private feedback repository
-   with Issues and Contents read/write access and Metadata read access).
-   Issues write creates and edits feedback issues. Contents write is the
-   GitHub permission required for release-asset uploads. Save the Worker
-   configuration through the normal deployment process. Both secrets
-   belong only in the Worker.
+   (a fine-grained token restricted to the private feedback repository).
+   Select these repository permissions:
+   - **Issues: Read and write** for listing, creating and editing issues.
+   - **Contents: Read and write** for reading the release and its assets
+     and uploading the JPEG. GitHub requires this scope for release-asset
+     uploads. [GitHub release asset API permissions](https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28#upload-a-release-asset)
+   - **Metadata: Read** for the repository visibility check. GitHub includes
+     this permission automatically.
+
+   Save the Worker configuration through the normal deployment process.
+   Both secrets belong only in the Worker.
 3. Read the Worker root with GET to see its version and whether both
    secrets are present. The `configured` flag checks presence only.
    After site activation, a successful form submission returns 201 and

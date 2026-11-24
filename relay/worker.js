@@ -92,8 +92,8 @@ export class RateLimiter extends DurableObject {
   }
   async alarm() { await this.ctx.storage.deleteAll(); }
 
-  async submit(issue, jpeg) {
-    this.#sending ??= saveSubmission(this.ctx.storage, this.env.GITHUB_TOKEN, issue, jpeg)
+  async submit(submission, issue, jpeg) {
+    this.#sending ??= saveSubmission(this.ctx.storage, this.env.GITHUB_TOKEN, submission, issue, jpeg)
       .finally(() => { this.#sending = undefined; });
     return this.#sending;
   }
@@ -263,10 +263,35 @@ const validNumber = number => Number.isSafeInteger(number) && number > 0;
 const githubHeaders = token => ({ 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'fss-demo-feedback-relay', 'Content-Type': 'application/json' });
 
+function githubClient(token) {
+  const signal = AbortSignal.timeout(8000);
+  return (url, { headers, ...options } = {}) => fetch(url, {
+    ...options, headers: { ...githubHeaders(token), ...headers }, redirect: 'error', signal,
+  });
+}
+
 async function githubJson(response, status, cap = 65_536) {
   if (response.status !== status) return null;
   const raw = await readBody(response.body, cap);
   return raw === null ? null : JSON.parse(raw);
+}
+
+async function findSubmission(github, since, marker) {
+  // List repository issues directly to avoid waiting for the search index.
+  const perPage = 30;
+  const query = new URLSearchParams({ state: 'all', sort: 'created', direction: 'asc', since, per_page: perPage });
+  for (let page = 1; ; page++) {
+    const issues = await githubJson(await github(`${GITHUB}/issues?${query}&page=${page}`), 200, 4 * 1024 * 1024);
+    if (!Array.isArray(issues)) throw new Error('Could not check for an existing feedback issue.');
+    for (const issue of issues) {
+      if (!validNumber(issue?.number) || (issue.body !== null && typeof issue.body !== 'string'))
+        throw new Error('Could not read the feedback issue list.');
+      if (!issue.pull_request && issue.body?.startsWith(marker)) {
+        return { ok: true, number: issue.number, ...(issue.body.endsWith(SCREENSHOT_FAILED) && { screenshot: 'failed' }) };
+      }
+    }
+    if (issues.length < perPage) return null;
+  }
 }
 
 async function attachScreenshot(github, issue, number, jpeg) {
@@ -276,7 +301,9 @@ async function attachScreenshot(github, issue, number, jpeg) {
   // The release response can include its full asset list. Use the paginated
   // endpoint to check the 1,000th slot even if that inline list is incomplete.
   const release = await githubJson(await github(`${GITHUB}/releases/tags/${SCREENSHOT_TAG}`), 200, 4 * 1024 * 1024);
-  if (!validNumber(release?.id) || release.tag_name !== SCREENSHOT_TAG || release.draft !== false || release.immutable !== false) return false;
+  if (!validNumber(release?.id) || release.tag_name !== SCREENSHOT_TAG || release.draft !== false) return false;
+  if (!Object.hasOwn(release, 'immutable')) console.warn('Screenshot skipped: GitHub release response omitted immutable.');
+  if (release.immutable !== false) return false;
   const assets = await githubJson(await github(`${GITHUB}/releases/${release.id}/assets?per_page=1&page=1000`), 200);
   if (!Array.isArray(assets) || assets.length) return false;
 
@@ -296,19 +323,25 @@ async function attachScreenshot(github, issue, number, jpeg) {
   return linked?.number === number && linked.body === body;
 }
 
-async function saveSubmission(storage, token, issue, jpeg) {
+async function saveSubmission(storage, token, submission, issue, jpeg) {
   const receipt = await storage.get('receipt');
-  if (receipt) return receipt;
+  if (receipt?.ok) return receipt;
 
-  // Reserve before posting. If GitHub's response is lost or ambiguous, a
-  // later attempt must not create a second issue for the same submission.
-  await storage.put('receipt', { ok: false });
-  const signal = AbortSignal.timeout(8000);
-  const github = (url, { headers, ...options } = {}) => fetch(url, {
-    ...options, headers: { ...githubHeaders(token), ...headers }, redirect: 'error', signal,
-  });
-  const initialIssue = jpeg ? { ...issue, body: issue.body + SCREENSHOT_FAILED } : issue;
-  const response = await github(`${GITHUB}/issues`, { method: 'POST', body: JSON.stringify(initialIssue) });
+  const marker = `<!-- fss-feedback-submission: ${submission} -->\n\n`;
+  if (receipt) {
+    const found = await findSubmission(githubClient(token), receipt.since, marker);
+    if (found) {
+      await storage.put('receipt', found);
+      return found;
+    }
+  } else {
+    // Reserve before posting. Include a small clock-skew allowance in the lookup window.
+    await storage.put('receipt', { ok: false, since: new Date(Date.now() - 60_000).toISOString() });
+  }
+
+  const markedIssue = { ...issue, body: marker + issue.body };
+  const initialIssue = jpeg ? { ...markedIssue, body: markedIssue.body + SCREENSHOT_FAILED } : markedIssue;
+  const response = await githubClient(token)(`${GITHUB}/issues`, { method: 'POST', body: JSON.stringify(initialIssue) });
   if ([400, 401, 403, 404, 410, 422, 429].includes(response.status)) {
     await storage.delete('receipt'); // GitHub explicitly rejected the create.
     return { ok: false };
@@ -322,7 +355,7 @@ async function saveSubmission(storage, token, issue, jpeg) {
   // The original issue already contains the failure note. Replace it only
   // after a confirmed upload, so an unavailable GitHub still leaves a note.
   try {
-    if (await attachScreenshot(github, issue, created.number, jpeg)) {
+    if (await attachScreenshot(githubClient(token), markedIssue, created.number, jpeg)) {
       const attached = { ...result, screenshot: 'attached' };
       await storage.put('receipt', attached);
       return attached;
@@ -405,7 +438,7 @@ export default {
 
     const issue = issueFor(value);
     if (submission) {
-      const result = await limiter('submission:' + submission).submit(issue, jpeg).catch(() => null);
+      const result = await limiter('submission:' + submission).submit(submission, issue, jpeg).catch(() => null);
       return result?.ok ? json(201, result) : json(502, { ok: false, error: issueUnavailable });
     }
     const gh = await fetch(`${GITHUB}/issues`, {

@@ -43,12 +43,13 @@ const testEnv = { GITHUB_TOKEN: 'sample-issue-key', TURNSTILE_SECRET: 'sample-ch
 testEnv.LIMITER = stubLimiter(testEnv);
 
 function stubExternal(t, verify = () => ({ success: true, hostname: new URL(O).hostname }), override) {
-  const github = githubStub();
-  return t.mock.method(globalThis, 'fetch', async (url, options) => {
+  const github = githubStub(7, override);
+  const { mock } = t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (url === checkUrl)
       return Response.json(verify(options.body.get('response')));
-    return override?.(url, options, github) ?? github(url, options);
-  }).mock;
+    return github(url, options);
+  });
+  return Object.assign(mock, { issues: github.issues });
 }
 
 const modes = ['accurate length', 'no length', 'lying smaller length', 'chunked without length'];
@@ -167,29 +168,30 @@ test('the image envelope requires a matching header and base64 JPEG', async t =>
 
 test('uploads the exact JPEG after issue creation and only links the confirmed private asset', async t => {
   const upstream = stubExternal(t);
+  const body = imageBody(jpegs.wide);
   const text = await worker.fetch(req({ body: textFields }), testEnv);
-  const image = await worker.fetch(req({ body: imageBody(jpegs.wide), ct: imageCT }), testEnv);
+  const image = await worker.fetch(req({ body, ct: imageCT }), testEnv);
   assert.equal(text.status, 201);
   assert.equal(image.status, 201);
   assert.deepEqual(await text.json(), { ok: true, number: 7 });
-  assert.deepEqual(await image.json(), { ok: true, number: 7, screenshot: 'attached' });
+  assert.deepEqual(await image.json(), { ok: true, number: 8, screenshot: 'attached' });
   const [textCheck, textIssue, imageCheck, imageIssue, privacy, release, assets, upload, link] = upstream.calls.map(call => call.arguments);
   assert.deepEqual(upstream.calls.map(call => call.arguments[0]), [checkUrl, `${repo}/issues`, checkUrl,
-    `${repo}/issues`, repo, releaseTag, releaseAssets, uploadUrl(7), `${repo}/issues/7`]);
+    `${repo}/issues`, repo, releaseTag, releaseAssets, uploadUrl(8), `${repo}/issues/8`]);
   assert.equal(imageCheck[0], textCheck[0]);
   assert.equal(imageCheck[1].method, textCheck[1].method);
   assert.deepEqual([...imageCheck[1].body], [...textCheck[1].body]);
   assert.equal(imageIssue[0], textIssue[0]);
   const written = JSON.parse(imageIssue[1].body);
   const plain = JSON.parse(textIssue[1].body);
-  const received = body => body.replace(/^\*\*Received:\*\* .*$/m, '**Received:** sample-time');
+  const received = text => text.replace(/^\*\*Received:\*\* .*$/m, '**Received:** sample-time');
   assert.deepEqual({ ...written, body: received(written.body) },
-    { ...plain, body: received(plain.body) + '\n\nScreenshot failed.' });
+    { ...plain, body: `<!-- fss-feedback-submission: ${body.id} -->\n\n${received(plain.body)}\n\nScreenshot failed.` });
   for (const [, options] of [imageIssue, privacy, release, assets, upload, link]) assert.equal(options.redirect, 'error');
   assert.equal(upload[1].headers['Content-Type'], 'image/jpeg');
   assert.deepEqual(Buffer.from(upload[1].body), jpegs.wide);
   assert.deepEqual(JSON.parse(link[1].body), {
-    body: written.body.replace(/Screenshot failed\.$/, `[Screenshot (JPEG)](${privateLink(7)})`),
+    body: written.body.replace(/Screenshot failed\.$/, `[Screenshot (JPEG)](${privateLink(8)})`),
   });
 });
 
@@ -317,6 +319,7 @@ const sendImage = (body = imageBody(jpegs.wide), env = testEnv) => worker.fetch(
 const retryText = (id, env = testEnv) => worker.fetch(req({ body: textFields, ct: `application/json; submission=${id}` }), env);
 const calledUrls = upstream => upstream.calls.map(call => call.arguments[0]);
 const issueWrites = upstream => upstream.calls.filter(call => call.arguments[0] === `${repo}/issues`);
+const issueLookup = url => url.startsWith(`${repo}/issues?`);
 
 for (const [scenario, endpoint, metadata] of [
   ['public repository', repo, { private: false, visibility: 'public' }],
@@ -339,13 +342,25 @@ for (const [scenario, endpoint, metadata] of [
   });
 }
 
+test('a missing release immutable flag logs a fixed warning and keeps text only', async t => {
+  const warning = t.mock.method(console, 'warn', () => {});
+  const upstream = stubExternal(t, undefined, url => url === releaseTag ?
+    Response.json({ id: 42, tag_name: 'feedback-screenshots', draft: false }) : undefined);
+  assert.deepEqual(await (await sendImage()).json(), savedText);
+  assert.deepEqual(calledUrls(upstream), [checkUrl, `${repo}/issues`, repo, releaseTag]);
+  assert.deepEqual(warning.mock.calls.map(call => call.arguments), [
+    ['Screenshot skipped: GitHub release response omitted immutable.'],
+  ]);
+  assert.match(upstream.issues.get(7).body, /Screenshot failed\.$/);
+});
+
 for (const [scenario, respond] of [
   ['upload rejects', () => new Response(null, { status: 422 })],
   ['upload response body over cap', () => new Response(' '.repeat(8193), { status: 201 })],
   ['upload response has malformed JSON', () => new Response('{', { status: 201 })],
   ...Object.entries({ size: 262145, state: 'starter', name: 'issue-8.jpg', content_type: 'text/html', browser_download_url: 'https://example.invalid/asset' })
     .map(([field, value]) => [`invalid asset ${field}`, async (url, options, github) =>
-      Response.json({ ...await github(url, options).json(), [field]: value }, { status: 201 })]),
+      Response.json({ ...await (await github(url, options)).json(), [field]: value }, { status: 201 })]),
 ]) {
   test(`${scenario} leaves the issue and never links the screenshot`, async t => {
     const upstream = stubExternal(t, undefined, (url, ...args) => url === uploadUrl(7) ? respond(url, ...args) : undefined);
@@ -405,28 +420,30 @@ test('parallel image and staff text retries share the receipt and await link con
   assert.equal(calledUrls(upstream).filter(url => url === `${repo}/issues/7`).length, 1);
 });
 
-for (const [stage, endpoint, expected] of [
-  ['issue creation', `${repo}/issues`, null],
-  ['upload', uploadUrl(7), savedText],
-  ['issue link', `${repo}/issues/7`, savedText],
+function untilAborted(signal) {
+  return new Promise((_, reject) => {
+    signal.throwIfAborted();
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+}
+
+for (const [stage, endpoint] of [
+  ['upload', uploadUrl(7)],
+  ['issue link', `${repo}/issues/7`],
 ]) {
   test(`GitHub timeout during ${stage} keeps retry from creating a duplicate issue`, async t => {
-    const deadline = new AbortController();
-    const timers = t.mock.method(AbortSignal, 'timeout', ms => ms === 8000 ? deadline.signal : new AbortController().signal);
     const body = imageBody(jpegs.wide);
+    const deadline = new AbortController();
+    const timeout = t.mock.method(AbortSignal, 'timeout', ms => ms === 8000 ? deadline.signal : new AbortController().signal);
     const upstream = stubExternal(t, undefined, (url, options) => {
       if (url !== endpoint) return;
       assert.equal(options.signal, deadline.signal);
-      return new Promise((_, reject) => {
-        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
-        queueMicrotask(() => deadline.abort());
-      });
+      queueMicrotask(() => deadline.abort());
+      return untilAborted(options.signal);
     });
     const verify = async response => {
-      assert.equal(response.status, expected ? 201 : 502);
-      const result = await response.json();
-      if (expected) assert.deepEqual(result, expected);
-      else assert.equal(result.ok, false);
+      assert.equal(response.status, 201);
+      assert.deepEqual(await response.json(), savedText);
     };
     await verify(await sendImage(body));
     assert.equal(deadline.signal.aborted, true);
@@ -434,9 +451,143 @@ for (const [stage, endpoint, expected] of [
     testEnv.LIMITER.restart();
     await verify(await retryText(body.id));
     assert.equal(issueWrites(upstream).length, 1);
-    assert.deepEqual(timers.mock.calls.map(call => call.arguments[0]), [5000, 8000, 5000]);
+    assert.deepEqual(timeout.mock.calls.map(call => call.arguments[0]), [5000, 8000, 8000, 5000]);
   });
 }
+
+for (const [scenario, fail] of [
+  ['GitHub 503', () => new Response(null, { status: 503 })],
+  ['a network error', () => { throw new TypeError('Sample network failure'); }],
+  ['an eight-second timeout', signal => untilAborted(signal)],
+]) {
+  test(`${scenario} before issue creation recovers on a text retry`, async t => {
+    const timeout = t.mock.method(AbortSignal, 'timeout', ms => {
+      const controller = new AbortController();
+      if (ms === 8000) setImmediate(() => controller.abort());
+      return controller.signal;
+    });
+    const body = imageBody(jpegs.wide);
+    let firstCreate = true;
+    const upstream = stubExternal(t, undefined, (url, options) => {
+      if (url !== `${repo}/issues` || !firstCreate) return;
+      firstCreate = false;
+      return fail(options.signal);
+    });
+    assert.equal((await sendImage(body)).status, 502);
+    assert.equal(upstream.issues.size, 0);
+    testEnv.LIMITER.restart();
+    const retry = await retryText(body.id);
+    assert.equal(retry.status, 201);
+    assert.deepEqual(await retry.json(), { ok: true, number: 7 });
+    assert.deepEqual(calledUrls(upstream).map(url => issueLookup(url) ? 'lookup' : url),
+      [checkUrl, `${repo}/issues`, checkUrl, 'lookup', `${repo}/issues`]);
+    assert.deepEqual(timeout.mock.calls.map(call => call.arguments[0]), [5000, 8000, 5000, 8000, 8000]);
+    assert.equal(upstream.issues.size, 1);
+  });
+}
+
+for (const [scenario, response] of [
+  ['a 503', new Response(null, { status: 503 })],
+  ['a non-JSON 201', new Response('<html>', { status: 201 })],
+  ['an oversized 201', new Response(' '.repeat(65_537), { status: 201 })],
+]) {
+  test(`${scenario} after issue creation recovers the same issue on retry`, async t => {
+    let firstCreate = true;
+    const upstream = stubExternal(t, undefined, async (url, options, github) => {
+      if (url !== `${repo}/issues` || !firstCreate) return;
+      firstCreate = false;
+      await github(url, options);
+      return response;
+    });
+    const body = imageBody(jpegs.wide);
+    assert.equal((await sendImage(body)).status, 502);
+    assert.equal(upstream.issues.size, 1);
+    testEnv.LIMITER.restart();
+    const retry = await retryText(body.id);
+    assert.equal(upstream.issues.size, 1, 'the retry must leave exactly one GitHub issue');
+    assert.deepEqual(await retry.json(), savedText);
+    assert.deepEqual(await (await retryText(body.id)).json(), savedText);
+    assert.equal(issueWrites(upstream).length, 1);
+    assert.equal(calledUrls(upstream).filter(issueLookup).length, 1);
+  });
+}
+
+test('a Durable Object restart during an ambiguous create finds the issue on a later page', async t => {
+  const deadline = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', ms => ms === 8000 && !deadline.signal.aborted
+    ? deadline.signal : new AbortController().signal);
+  const created = Promise.withResolvers();
+  let firstCreate = true;
+  const upstream = stubExternal(t, undefined, async (url, options, github) => {
+    if (url !== `${repo}/issues` || !firstCreate) return;
+    firstCreate = false;
+    await github(url, options);
+    created.resolve();
+    return untilAborted(options.signal);
+  });
+  for (let i = 0; i < 30; i++) upstream.issues.set(i + 7, { number: i + 7, body: null });
+  const body = imageBody(jpegs.wide);
+  const initial = sendImage(body);
+  try {
+    assert.equal(await Promise.race([created.promise.then(() => 'created'), initial.then(() => 'response')]), 'created');
+    testEnv.LIMITER.restart();
+  } finally {
+    deadline.abort();
+  }
+  assert.equal((await initial).status, 502);
+  const results = await Promise.all([retryText(body.id), sendImage(body)]);
+  for (const result of results) assert.deepEqual(await result.json(), { ...savedText, number: 37 });
+  assert.equal(upstream.issues.size, 31);
+  assert.equal(issueWrites(upstream).length, 1);
+  assert.deepEqual(calledUrls(upstream).filter(issueLookup).map(url => new URL(url).searchParams.get('page')), ['1', '2']);
+});
+
+test('an unavailable issue lookup preserves the reservation without another create', async t => {
+  let firstLookup = true;
+  const upstream = stubExternal(t, undefined, async (url, options, github) => {
+    if (url === `${repo}/issues` && firstLookup) {
+      await github(url, options);
+      return new Response(null, { status: 503 });
+    }
+    if (issueLookup(url) && firstLookup) {
+      firstLookup = false;
+      return new Response(null, { status: 503 });
+    }
+  });
+  const body = imageBody(jpegs.wide);
+  assert.equal((await retryText(body.id)).status, 502);
+  assert.equal((await retryText(body.id)).status, 502);
+  assert.deepEqual(await (await retryText(body.id)).json(), { ok: true, number: 7 });
+  assert.equal(upstream.issues.size, 1);
+  assert.equal(issueWrites(upstream).length, 1);
+});
+
+test('a slow 4 MB release read has a deadline independent of issue creation', async t => {
+  const issued = new AbortController();
+  const screenshot = new AbortController();
+  const deadlines = [issued, screenshot];
+  const timeouts = t.mock.method(AbortSignal, 'timeout', ms => ms === 8000
+    ? deadlines.shift().signal : new AbortController().signal);
+  const release = JSON.stringify({ id: 42, tag_name: 'feedback-screenshots', draft: false, immutable: false });
+  const bytes = new TextEncoder().encode(release.padEnd(4 * 1024 * 1024));
+  const upstream = stubExternal(t, undefined, (url, options) => {
+    if (url === releaseTag) return new Response(new ReadableStream({
+      async start(controller) {
+        await new Promise(resolve => setImmediate(resolve));
+        issued.abort();
+        if (options.signal.aborted) controller.error(options.signal.reason);
+        else {
+          controller.enqueue(bytes);
+          controller.close();
+        }
+      },
+    }));
+  });
+  assert.deepEqual(await (await sendImage()).json(), savedImage);
+  assert.equal(issueWrites(upstream)[0].arguments[1].signal, issued.signal);
+  assert.equal(upstream.calls.find(call => call.arguments[0] === releaseTag).arguments[1].signal, screenshot.signal);
+  assert.deepEqual(timeouts.mock.calls.map(call => call.arguments[0]), [5000, 8000, 8000]);
+});
 
 test('a rejected issue create can retry as text with the same submission ID', async t => {
   let rejected = false;
