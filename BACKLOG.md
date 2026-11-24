@@ -330,6 +330,62 @@ mutation and the double-save mutation were caught. Night Wall Light stayed
 at 219,528 initial bytes. Checklist totals are 18 PASS, 0 FAIL and 1 N/A.
 Round 1 is ready for review on PR #2.
 
+## 16. Feedback screenshot caps and validation — verified on branch
+
+Item 3 in the 23 Nov screenshot feedback brief. The branch starts at
+`5211f46`, the current `origin/main`. The live Pages feedback module matches
+that commit, and the relay reports version 4. The editor is loopback-only,
+sends text alone, and the relay has no bounded streaming or JPEG validation.
+Add the caps and text fallback. The relay still creates only the text issue.
+
+**Close-out (24 Nov).** The relay caps the streamed body at 8,192 bytes for
+text or 368,640 bytes for an image. It checks JPEG structure, rejects optional
+metadata, and caps the JPEG at 262,144 bytes and 1,280 pixels on the longest
+edge. It discards accepted images and reserves text capacity through a
+separate image allowance. The editor stays loopback-only and preserves the
+draft for **Send text only**. Public text POSTs match the captured fixture.
+Unit passed 77/77 on both revisions. Relay passed 41/41 vs 9/9. Official
+browser parity passed 409 vs 391 with the same five skips and no failing
+names. All 40 JavaScript files passed syntax checks. Night Wall Light
+measured 219,528 initial bytes on both revisions. Checklist totals are
+19 PASS, 0 FAIL, 1 N/A. Ready for PR review.
+
+**Round 1 of 3 opened (24 Nov).** The PR #3 review reproduced image attempts
+spending text slots, oversized text spending a slot, and failed image sends
+without a text fallback. The relay charges image attempts before Turnstile
+and the suite misses a skipped image challenge. Fix these five findings on
+the existing branch. The live Pages client matches main at `5211f46`, and
+the live relay reports version 4.
+
+**Round 1 close-out.** Image requests use their own buckets after Turnstile.
+Oversized text returns 413 before the limiter. Any failed image send keeps the
+draft and offers **Send text only**. A failed check on a valid JPEG returns
+403 with zero GitHub issue calls. The supplied repro confirmed all five
+sender and 30 global text slots after image traffic.
+Unit passed 77/77 on both revisions. Relay passed 44/44 vs 9/9. Official
+browser parity passed 421 vs 391 with the same five skips and no failing
+names. All 68 JavaScript files passed syntax checks on both revisions.
+Night Wall Light stayed at 219,528 initial bytes. All five mutations failed
+their suites and were restored. Checklist totals are 19 PASS, 0 FAIL, 1 N/A.
+Ready for Tester re-review on PR #3.
+
+**Round 2 of 3 opened (24 Nov).** The refuter found an unready Turnstile
+retry, unverified image traffic reaching siteverify without a rate limit, and
+missing upstream-call assertions. Fix these on PR #3. The production Pages
+modules match main at `5211f46`, and the live relay reports version 4.
+
+**Round 2 close-out.** The text retry keeps an unspent check or waits for a
+fresh one. A widget error keeps the draft in the browser. Images get four
+attempts per sender per minute per isolate before siteverify. The text status
+sequences match main, including five sends per sender and 30 globally.
+The capacity test counts upstream calls and catches an issue POST on 429.
+Unit passed 77/77 on both revisions. Relay passed 45/45 vs 9/9. Official
+browser parity passed 433 vs 391 with the same five skips and no failing
+names. All 68 JavaScript syntax checks passed. Night Wall Light measured
+219,528 initial bytes. Checklist totals are 19 PASS, 0 FAIL, 1 N/A.
+All six scratch mutations were caught and restored. PR #3 is ready for
+Tester re-review.
+
 ## Parking lot
 - Pointer-following light on glass cards (cut per the plan's cut order).
 - Real shared storage so every visitor sees the same calendar (needs a hosting answer).

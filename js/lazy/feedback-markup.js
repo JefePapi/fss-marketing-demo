@@ -1,7 +1,31 @@
 import { field, h } from '../ui.js';
 import { drawMarkup } from './feedback-markup-draw.js';
 
-export function editScreenshot(source, form, opener, onSave) {
+const JPEG_PREFIX = 'data:image/jpeg;base64,';
+const MAX_JPEG = 256 * 1024;
+const MAX_EDGE = 1280;
+
+// Canvas can write a color profile. Keep its ordinary JFIF header and pixels.
+function stripCanvasMetadata(encoded) {
+  const bytes = atob(encoded);
+  const at = offset => bytes.charCodeAt(offset);
+  let kept = '', start = 0;
+  for (let offset = 2; at(offset) === 0xff;) {
+    const marker = at(offset + 1);
+    if (marker === 0xda) return start ? btoa(kept + bytes.slice(start)) : encoded;
+    const length = at(offset + 2) * 256 + at(offset + 3);
+    const end = offset + length + 2;
+    if (!(length >= 2 && end <= bytes.length)) break;
+    if ((marker >= 0xe1 && marker <= 0xef) || marker === 0xfe) {
+      kept += bytes.slice(start, offset);
+      start = end;
+    }
+    offset = end;
+  }
+  throw new Error('JPEG scan unavailable');
+}
+
+export function editScreenshot(source, form, opener, onSave, onUnavailable) {
   const {width, height} = source;
   const canvas = h('canvas', {width, height, 'aria-hidden':'true'});
   const ctx = canvas.getContext('2d', {alpha:false});
@@ -112,20 +136,36 @@ export function editScreenshot(source, form, opener, onSave) {
   const remove = h('button', {type:'button', class:'btn feedback-markup-remove', onclick:() => {
     if (window.confirm('Remove this screenshot and all its marks?')) finish();
   }}, 'Remove');
-  const save = h('button', {type:'button', class:'btn primary', onclick:() => {
-    if (!panel.isConnected) return;
-    let jpeg;
+  const save = h('button', {type:'button', class:'btn primary', onclick:async () => {
+    if (!panel.isConnected || save.disabled) return;
+    save.disabled = true;
     try {
       render(false);
-      jpeg = canvas.toDataURL('image/jpeg', .9);
-      if (!jpeg.startsWith('data:image/jpeg;base64,')) throw new Error('JPEG unavailable');
+      const jpeg = canvas.toDataURL('image/jpeg', .9);
+      if (!jpeg.startsWith(JPEG_PREFIX)) throw new Error('JPEG unavailable');
+      const encoded = jpeg.slice(JPEG_PREFIX.length);
+      const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+      if (encoded.length / 4 * 3 - padding > MAX_JPEG || Math.max(width, height) > MAX_EDGE) {
+        if (panel.isConnected) {
+          finish();
+          onUnavailable('This screenshot is too large.');
+        }
+        return;
+      }
+      const cleaned = stripCanvasMetadata(encoded);
+      const img = h('img', {src:JPEG_PREFIX + cleaned, width, height, alt:'Marked-up page screenshot preview'});
+      await img.decode();
+      if (img.naturalWidth !== width || img.naturalHeight !== height) throw new Error('JPEG dimensions changed');
+      if (panel.isConnected) {
+        finish();
+        onSave(img, cleaned);
+      }
     } catch {
-      render();
-      status.textContent = 'Could not save the screenshot. Try again or choose Remove.';
-      return;
+      if (panel.isConnected) {
+        finish();
+        onUnavailable('Could not read this screenshot.');
+      }
     }
-    finish();
-    onSave(jpeg, width, height);
   }}, 'Save screenshot');
   const panel = h('section', {class:'feedback-markup', 'aria-labelledby':'screenshot-title'},
     h('h3', {id:'screenshot-title'}, 'Mark up your screenshot'),

@@ -12,20 +12,37 @@ export function relayResult(status, body) {
   return {delivery:'local', text:'Saved in this browser. ' + reason};
 }
 
-export async function postFeedback(entry, token) {
+export async function postFeedback(entry, token, screenshot) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
+  const screenshotFailure = {delivery:'local', screenshotError:'Could not send this screenshot.', refreshCheck:true};
   try {
     const {type, message, name, page, route, theme} = entry;
     const response = await fetch(FEEDBACK_RELAY_URL, {
       method:'POST', mode:'cors', credentials:'omit', referrerPolicy:'no-referrer', redirect:'error',
-      headers:{'Content-Type':'application/json'}, signal:controller.signal,
+      headers:{'Content-Type':screenshot ? 'application/json; screenshot=jpeg' : 'application/json'},
+      signal:controller.signal,
       body:JSON.stringify({type:type.toLowerCase(), message, name, page:page.slice(0, 200),
-        route:route.slice(0, 200), theme, ...(token && {turnstileToken:token})}),
+        route:route.slice(0, 200), theme, ...(token && {turnstileToken:token}),
+        ...(screenshot && {id:entry.id, screenshot})}),
     });
-    return relayResult(response.status, response.ok ? await response.json() : null);
+    if (screenshot && [413, 422, 429].includes(response.status)) {
+      const screenshotError = response.status === 413 ? 'This screenshot is too large.'
+        : response.status === 429 ? 'Screenshots are busy right now.'
+        : 'Could not read this screenshot.';
+      // The pre-check can refuse an image before its token reaches siteverify.
+      const refreshCheck = response.status === 429 &&
+        (await response.json().catch(() => null))?.checkUsed !== false;
+      return {delivery:'local', screenshotError, refreshCheck};
+    }
+    const result = relayResult(response.status, response.ok ? await response.json() : null);
+    if (screenshot && result.delivery !== 'sent') {
+      const refreshCheck = response.status === 403 || response.status >= 500 || response.ok;
+      return {...screenshotFailure, refreshCheck};
+    }
+    return result;
   } catch {
-    return relayResult(0);
+    return screenshot ? screenshotFailure : relayResult(0);
   } finally {
     clearTimeout(timeout);
   }
@@ -47,10 +64,23 @@ function loadTurnstile() {
 // Each open form owns one widget. Ignore a late script load after the sheet closes.
 export function feedbackCheck() {
   const container = TURNSTILE_SITE_KEY && h('div', {class:'feedback-check'});
-  let id, token = '', closed = false;
+  let id, token = '', closed = false, unavailable = !container, resolveReady;
+  function notifyReady() {
+    resolveReady?.(token);
+    resolveReady = undefined;
+  }
+  function checkFailed() {
+    token = '';
+    unavailable = true;
+    notifyReady();
+  }
   return {
     container,
     token:() => token,
+    waitForToken() {
+      if (token || unavailable || closed) return Promise.resolve(token);
+      return new Promise(resolve => { resolveReady = resolve; });
+    },
     async mount() {
       if (!container) return;
       try {
@@ -59,12 +89,23 @@ export function feedbackCheck() {
         const theme = getComputedStyle(container).colorScheme === 'dark' ? 'dark' : 'light';
         id = api.render(container, {sitekey:TURNSTILE_SITE_KEY, theme,
           size:container.clientWidth < 300 ? 'compact' : 'flexible',
-          callback:value => { token = value; }, 'expired-callback':() => { token = ''; },
-          'error-callback':() => { token = ''; },
+          callback:value => {
+            token = value;
+            unavailable = false;
+            if (token) notifyReady();
+          },
+          'expired-callback':() => { token = ''; },
+          'error-callback':checkFailed,
         });
       } catch {
+        checkFailed();
         container.textContent = 'The check could not load. You can still save feedback.';
       }
+    },
+    reset() {
+      token = '';
+      // The preceding send may already have used this token.
+      try { if (id != null) window.turnstile.reset(id); } catch { checkFailed(); }
     },
     remove() {
       closed = true;
@@ -72,6 +113,7 @@ export function feedbackCheck() {
       try { if (id != null) window.turnstile.remove(id); } catch { /* The sheet removes the container. */ }
       id = undefined;
       token = '';
+      notifyReady();
     },
   };
 }

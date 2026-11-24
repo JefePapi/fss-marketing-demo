@@ -70,12 +70,15 @@ page session.
 
 ### Preview the screenshot editor locally
 
-The editor is off by default while screenshot delivery is pending. From the
+The editor is off by default while screenshot storage is pending. From the
 repo, run `python3 -m http.server 4173 --bind 127.0.0.1` and open
 `http://127.0.0.1:4173/?feedback-markup=1#/`. The flag also works on
 `localhost`. Open **Feedback** and choose **Add page screenshot** to preview
-the masked page from when Feedback opened. **Save feedback** sends your
-written feedback. The screenshot preview stays in memory on this device.
+the masked page from when Feedback opened. The preview lives in the open
+form. **Save feedback** sends the writing and optional screenshot in one
+request. The updated relay checks and discards the screenshot and creates the
+usual private issue for the writing. Local end-to-end tests simulate the
+allowed production origin and stub Turnstile and GitHub.
 
 Tap or drag to highlight or circle an area. Choose **Note**, tap a spot, and
 type sample details. Keyboard users can tab to the screenshot, move with arrow
@@ -83,8 +86,10 @@ keys, and press Enter to mark. Escape in the note field closes the field and
 keeps the note. **Undo** removes the last mark. **Remove** in the editor asks
 before discarding the screenshot and all marks. **Cancel** and **Close** return
 to your draft. **Save screenshot** shows the flattened JPEG in the form, where
-**Remove** clears the preview. If capture is unavailable, keep writing and
-use **Save feedback**.
+**Remove** clears the preview. If the screenshot is unavailable, unreadable,
+too large, or fails to send, use **Send text only**. The form keeps your draft.
+The screenshot may be up to 1,280 pixels on its
+longest edge and 256 KiB as a JPEG.
 
 In **Staff view → Queue → Feedback**, Marketing can filter entries, mark
 them read or unread, confirm deletion of one entry and download the current
@@ -814,3 +819,30 @@ Totals **16 PASS, 0 FAIL, 1 N/A**.
 | Production data | N/A | The production check read static files from Pages. |
 
 Totals **18 PASS, 0 FAIL, 1 N/A**.
+
+### Security checklist for screenshot caps and validation (backlog #16)
+
+| Check | Result | Evidence |
+|---|---|---|
+| Login and permission guards | PASS | Existing Staff and inbox guards stay active. The origin and Turnstile checks still gate issue creation. |
+| Packages | PASS | Both package files match main. Tests use the installed Playwright and relay harness. |
+| Dependency audit | PASS | The registry audit found zero vulnerabilities in three test dependencies. |
+| Secrets and personal data | PASS | Tests use sample data and mock keys. Existing capture masks remain in place. |
+| Editor rollout | PASS | The editor still requires an exact loopback host and query flag. Public browser tests verify the editor stays hidden with the flag off or on. |
+| Outbound data | PASS | Public text POSTs match the fixture byte for byte. Image POSTs use the existing relay endpoint. Upstream tests verify the same Turnstile and GitHub calls as text only. |
+| Typed text | PASS | The form uses DOM text nodes. Screenshot notes are painted on canvas, and Markdown escaping still applies to written feedback. |
+| CSV formula neutralization | PASS | The existing export safety tests pass. |
+| File formats | PASS | Relay tests cover baseline and progressive JPEGs, malformed segments, metadata and cap boundaries. Browser JPEGs pass the Worker checks with downstream services stubbed. JSON, CSV, XLS and ICS checks pass. |
+| CSP, origin, Turnstile and staff guards | PASS | The HTML shells and relay CORS policy match main. A valid JPEG with a failed Turnstile check returns 403 with zero issue calls. Staff retry tests pass. |
+| Approved artwork and official marks | PASS | The renderer uses the existing approved artwork and masks. |
+| Search indexing | PASS | Both HTML documents retain noindex and robots.txt matches main. |
+| Demo banner, footer and hooks | PASS | The existing shell and stable hooks remain in place. |
+| Controls, uploads and unknown content | PASS | Capture continues to mask fields, uploads and unknown content. A browser test checks the flattened field mask. |
+| Staff and record details | PASS | Capture still refuses staff and record-detail views. The Staff refusal test can send text. |
+| Feedback sheet and keyboard | PASS | Official browser tests cover tap and Enter during a check refresh, reuse of an unspent check, and a browser-only save on widget error. |
+| Screen sharing | PASS | The editor continues to use local Canvas 2D. |
+| Retention and logging | PASS | The JPEG stays in tab memory until submit, and the relay discards it. Browser storage, GitHub issues and logs contain no screenshot. |
+| Request and rate limits | PASS | Over-cap text returns 413 before the limiter. A separate image gate caps unverified attempts before siteverify. Tests confirm identical text status sequences on the branch and main, all five sender and 30 global text slots after image traffic, and zero issue calls on denied requests. |
+| Production data | N/A | Production checks used GET for the site module and relay status. |
+
+Totals **19 PASS, 0 FAIL, 1 N/A**.

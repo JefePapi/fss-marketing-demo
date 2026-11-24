@@ -15,8 +15,9 @@ addresses by their first four hextets (/64), and hashes the resulting key.
 A SQLite-backed `RateLimiter` Durable Object keeps timestamps for up to
 5 attempts per minute per key. Another object enforces 30 attempts per hour
 across all senders. Alarms clear inactive counters. A per-isolate window and
-the `RATE_LIMIT` binding provide additional checks. The limiter runs before
-secret and message checks, so unsuccessful attempts also count.
+the `RATE_LIMIT` binding provide additional checks. The text limiter runs
+after the body cap and before secret and message checks, so unsuccessful
+in-cap attempts also count.
 
 The Worker verifies the Turnstile response with Cloudflare and requires
 the verified hostname to equal `jefepapi.github.io`. The issue contains
@@ -25,6 +26,36 @@ server receipt time and message. The title begins with the type and an
 excerpt of the first line. The message uses a fenced text block. Labels are
 `feedback` plus the lowercase type, deduplicated. IP addresses, limiter
 keys and check tokens are excluded from issues.
+
+### Screenshot validation (Worker version 5)
+
+Text-only clients continue to send `application/json` with a cap of 8,192
+UTF-8 bytes. The local preview marks its optional image request as
+`application/json; screenshot=jpeg` and adds the entry `id` and a base64
+`screenshot` field. The marker selects the 368,640-byte body cap before any
+body reads, and the JSON must contain the matching screenshot field. Both
+limits count actual streamed bytes. The Worker cancels the stream at the
+first byte over the cap regardless of Content-Length.
+
+The JPEG may be up to 262,144 bytes and 1,280 pixels on either edge. The
+Worker checks markers, segments, baseline or progressive frame and scan
+headers, and scan framing. The browser also checks that the flattened image
+decodes before preview. The browser strips optional metadata emitted by its
+canvas encoder, including color profiles. The Worker rejects images with
+EXIF/GPS, XMP, ICC, comments or other optional metadata. Only the standard
+thumbnail-free JFIF application header is allowed. Rejection keeps
+untrusted metadata out without rewriting JPEGs in the Worker.
+
+Before reading the image body or calling Turnstile, the Worker allows four
+image attempts per sender per minute in each isolate. Verified image attempts
+have separate buckets for one sender slot per minute and ten slots per hour
+across all senders. Image requests leave the full text allowance available.
+
+A failed image send keeps the draft and offers **Send text only**. The retry
+uses the current check if the relay refused the image before verification.
+When the check may have been used, the form shows **Getting ready...** until
+a fresh check arrives. A check error leaves a browser copy of the draft.
+Accepted JPEGs are discarded. The only GitHub write is the usual text issue.
 
 ## Deployment and activation
 

@@ -4,28 +4,23 @@ import { TYPES, buildEntry, prependEntry } from './feedback-model.js';
 import { postFeedback, relayResult, feedbackCheck } from './feedback-relay.js';
 import { capture, rememberCapture } from './feedback-capture.js';
 
-const BACKENDS = {
-  local: entry => withFeedbackLock(() => writeFeedback(prependEntry(feedbackEntries(), entry))),
-  relay: postFeedback,
-};
-
 const attempts = new Map();
-export function deliverFeedback(id, token, allowed = () => true) {
+export function deliverFeedback(id, token, allowed = () => true, screenshot) {
   // Browsers without Web Locks can still share an in-flight send in this tab.
   if (attempts.has(id)) return attempts.get(id);
-  const attempt = sendStored(id, token, allowed).finally(() => attempts.delete(id));
+  const attempt = sendStored(id, token, allowed, screenshot).finally(() => attempts.delete(id));
   attempts.set(id, attempt);
   return attempt;
 }
 
-function sendStored(id, token, allowed) {
+function sendStored(id, token, allowed, screenshot) {
   // Serialize sends for the same entry across tabs, without holding the inbox
   // write lock during a slow POST. Re-read before updating so reads/deletes win.
   return withFeedbackLock(async () => {
     const entry = feedbackEntries().find(e => e.id === id);
     if (!entry || !allowed()) return relayResult(0);
     if (entry.delivery === 'sent') return relayResult(201, {ok:true, number:entry.issue});
-    const result = await BACKENDS.relay(entry, token);
+    const result = await postFeedback(entry, token, screenshot);
     if (result.delivery === 'sent' || !entry.delivery) await withFeedbackLock(() => {
       const entries = feedbackEntries();
       if (entries.some(e => e.id === id)) writeFeedback(entries.map(e => e.id === id
@@ -35,9 +30,19 @@ function sendStored(id, token, allowed) {
   }, 'mktdemo.feedback.send.' + id);
 }
 
-export async function submitFeedback(entry, token) {
-  await BACKENDS.local(entry);
-  return deliverFeedback(entry.id, token);
+function saveDraft(entry) {
+  return withFeedbackLock(() => {
+    const entries = feedbackEntries();
+    const previous = entries.find(e => e.id === entry.id);
+    if (!previous) writeFeedback(prependEntry(entries, entry));
+    else if (previous.delivery === 'local')
+      writeFeedback(entries.map(e => e.id === entry.id ? {...entry, read:e.read} : e));
+  });
+}
+
+export async function submitFeedback(entry, token, screenshot) {
+  await saveDraft(entry);
+  return deliverFeedback(entry.id, token, undefined, screenshot);
 }
 
 export function feedbackStyles() {
@@ -60,6 +65,7 @@ export function openFeedback(opener) {
   function compose() {
     check = feedbackCheck();
     let type = TYPES[0];
+    let screenshotJpeg, draft, textOnly = false;
     const theme = document.documentElement.dataset.theme;
     const count = h('span', {id:'feedback-length', class:'hint', 'aria-live':'polite'}, '0 / 2000');
     const error = h('p', {id:'feedback-error', class:'err', role:'alert', hidden:true});
@@ -75,37 +81,80 @@ export function openFeedback(opener) {
     const types = chips('feedback-type', 'Type', TYPES.map(t => [t,t]), type, value => { type = value; });
     types.querySelector('input').required = true;
     const screenshot = h('div', {class:'feedback-screenshot'});
-    const screenshotHint = h('p', {class:'hint'}, 'Preview a screenshot on this device. Only your written feedback is sent.');
+    const screenshotHint = h('p', {class:'hint'}, 'You can add a screenshot. Only your written feedback is kept.');
     const screenshotStatus = h('p', {class:'hint', role:'status'});
     const add = h('button', {type:'button', class:'btn', onclick:async () => {
-      if (add.getAttribute('aria-disabled') === 'true') return;
+      if (save.disabled || add.getAttribute('aria-disabled') === 'true') return;
       add.setAttribute('aria-disabled', 'true');
       screenshotStatus.textContent = '';
       try {
         const result = capture();
         if (result.ok) {
           const {editScreenshot} = await import('./feedback-markup.js');
-          if (form.isConnected && !save.disabled) editScreenshot(result.canvas, form, add, showPreview);
+          if (form.isConnected && !save.disabled) editScreenshot(result.canvas, form, add, showPreview, sendTextOnly);
           return;
         }
-        screenshotStatus.textContent = 'A screenshot is unavailable for this page. You can still send text feedback.';
+        sendTextOnly('A screenshot is unavailable for this page.');
       } catch {
-        screenshotStatus.textContent = 'Could not add a screenshot. You can still send text feedback.';
+        sendTextOnly('Could not add a screenshot.');
       } finally { add.removeAttribute('aria-disabled'); }
     }}, 'Add page screenshot');
-    function showPreview(jpeg, width, height) {
+    function sendTextOnly(reason) {
+      const hadPreview = Boolean(screenshotJpeg);
+      screenshotJpeg = undefined;
+      textOnly = true;
+      screenshotStatus.textContent = reason + ' You can still send text feedback.';
+      save.textContent = 'Send text only';
+      if (hadPreview) {
+        screenshot.replaceChildren(screenshotHint, add, screenshotStatus);
+        save.focus();
+      }
+    }
+    function showPreview(img, encoded) {
+      screenshotJpeg = encoded;
+      textOnly = false;
+      save.textContent = 'Save feedback';
       const remove = h('button', {type:'button', class:'btn', onclick:() => {
+        screenshotJpeg = undefined;
         screenshot.replaceChildren(screenshotHint, add, screenshotStatus);
         add.focus();
       }}, 'Remove');
-      screenshot.replaceChildren(h('p', {class:'hint'}, 'Screenshot preview for this device.'),
-        remove, h('img', {src:jpeg, width, height, alt:'Marked-up page screenshot preview', onload:() => {
-          if (document.activeElement === remove) screenshot.scrollIntoView({block:'start'});
-        }}));
+      screenshot.replaceChildren(h('p', {class:'hint'}, 'The screenshot will be sent for a check, then discarded.'),
+        remove, img);
       remove.focus();
+      screenshot.scrollIntoView({block:'start'});
     }
     screenshot.append(screenshotHint, add, screenshotStatus);
     const save = h('button', {type:'submit', class:'btn primary'}, 'Save feedback');
+    function readDraft() {
+      const id = draft?.id ?? Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8,'0')).join('');
+      draft = buildEntry({type, message:message.value, name:name.value,
+        page, route, theme}, id, draft?.at ?? new Date().toISOString());
+      return draft;
+    }
+    function showDelivery(result) {
+      check.remove();
+      const hadScreenshot = Boolean(screenshotJpeg);
+      screenshotJpeg = undefined;
+      const delivery = hadScreenshot && result.delivery === 'sent'
+        ? 'Your written feedback was sent to the marketing team.' : result.text;
+      const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
+      body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
+        h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
+        hadScreenshot && h('p', {class:'hint'}, 'The screenshot was not kept.'),
+        feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
+        h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
+      thanks.focus();
+    }
+    function waitForTextToken() {
+      if (!check.token()) save.textContent = 'Getting ready...';
+      return check.waitForToken();
+    }
+    async function showSavedDraft() {
+      // The visitor may have edited the draft while the check was running.
+      if (message.value.trim()) await saveDraft(readDraft());
+      if (body.isConnected) showDelivery(relayResult(0));
+    }
     const form = h('form', {class:'feedback-form', novalidate:true, onsubmit:async event => {
       event.preventDefault();
       if (save.disabled || form.hidden) return;
@@ -118,26 +167,32 @@ export function openFeedback(opener) {
       }
       save.disabled = true;
       save.setAttribute('aria-busy', 'true');
+      const screenshotButton = screenshot.querySelector('button');
+      screenshotButton.disabled = true;
       try {
-        const id = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8,'0')).join('');
-        const entry = buildEntry({type, message:message.value, name:name.value,
-          page, route, theme}, id, new Date().toISOString());
-        const result = await submitFeedback(entry, check.token());
+        const token = textOnly ? await waitForTextToken() : check.token();
         if (!body.isConnected) return;
-        check.remove();
-        const hadScreenshot = markupEnabled && screenshot.querySelector('img');
-        const delivery = hadScreenshot && result.delivery === 'sent'
-          ? 'Your written feedback was sent to the marketing team.' : result.text;
-        const thanks = h('h3', {tabindex:-1, 'aria-describedby':'feedback-delivery'}, 'Thanks — your feedback is saved in this demo.');
-        body.replaceChildren(h('section', {class:'feedback-done'}, thanks,
-          h('p', {id:'feedback-delivery', class:'feedback-status', role:'status', 'aria-live':'polite'}, delivery),
-          hadScreenshot && h('p', {class:'hint'}, 'The screenshot was a preview on this device.'),
-          feedbackTemporary() && h('p', {class:'note warn'}, memoryNote),
-          h('button', {class:'btn', type:'button', onclick:compose}, 'Send another')));
-        thanks.focus();
+        if (textOnly && !token) { await showSavedDraft(); return; }
+        const result = await submitFeedback(readDraft(), token, screenshotJpeg);
+        if (!body.isConnected) return;
+        if (result.screenshotError) {
+          if (result.refreshCheck) check.reset();
+          sendTextOnly(result.screenshotError);
+          const textToken = await waitForTextToken();
+          if (!body.isConnected) return;
+          if (!textToken) { await showSavedDraft(); return; }
+          save.textContent = 'Send text only';
+          save.disabled = false;
+          save.removeAttribute('aria-busy');
+          screenshotButton.disabled = false;
+          save.focus();
+          return;
+        }
+        showDelivery(result);
       } catch {
         save.disabled = false;
         save.removeAttribute('aria-busy');
+        screenshotButton.disabled = false;
         toast('Could not save feedback. Try again.');
       }
     }}, types, field(message.id, 'What do you like? What would you change?', message), count, error, field(name.id, 'Name (optional)', name),
